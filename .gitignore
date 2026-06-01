@@ -1,0 +1,24 @@
+# Build artifacts
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userprefs
+*.userosscache
+*.sln.docstates
+
+# NuGet (PackageReference — no packages/ dir, but just in case)
+packages/
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+
+# Rider / JetBrains
+.idea/
+*.DotSettings.user
+
+# Claude Code local settings (permissions, local config)
+.claude/

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>JiraTUI</RootNamespace>
+    <AssemblyName>JiraTUI</AssemblyName>
+    <ProjectGuid>{4E1B3B4F-8C7A-4A9B-9A5B-1F2D8C9E0B11}</ProjectGuid>
+    <UseWindowsForms>false</UseWindowsForms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ApplicationIcon />
+    <StartupObject>JiraTUI.Program</StartupObject>
+    <NoWarn>NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Terminal.Gui" Version="1.17.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Security" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+</Project>
