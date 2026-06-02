@@ -90,23 +90,41 @@ func PriorityGlyph(priorityName string) (string, tcell.Color) {
 	}
 }
 
+// StatusGlyph maps a Jira status name to a display glyph.
+// Matching is case-insensitive and uses Contains so non-standard status names
+// (e.g. "In Testing", "Code Review", "Won't Fix") are handled correctly.
+// Color is always tcell.ColorDefault — status glyphs inherit the row
+// foreground so they don't clash with theme-specific row colours.
 func StatusGlyph(statusName string) (string, tcell.Color) {
-	t := themes.Current()
-	lower := strings.ToLower(statusName)
+	u := strings.ToUpper(strings.TrimSpace(statusName))
+
 	switch {
-	case lower == "to do" || lower == "open" || lower == "backlog":
-		return GlyphStatusTodo, themes.C(t.StatusTodo)
-	case lower == "in progress":
-		return GlyphStatusInProgress, themes.C(t.StatusInProgress)
-	case lower == "in review" || lower == "testing" || lower == "qa":
-		return GlyphStatusInReview, themes.C(t.StatusInReview)
-	case lower == "blocked" || lower == "on hold":
-		return GlyphStatusBlocked, themes.C(t.StatusBlocked)
-	case lower == "done" || lower == "closed" || lower == "resolved":
-		return GlyphStatusDone, themes.C(t.StatusDone)
-	case lower == "cancelled" || lower == "won't do":
-		return GlyphStatusCancelled, themes.C(t.StatusCancelled)
+	case u == "DONE" || u == "CLOSED" || u == "RESOLVED" ||
+		u == "COMPLETE" || u == "COMPLETED" || u == "FIXED" ||
+		strings.Contains(u, "DEPLOYED"):
+		return GlyphStatusDone, tcell.ColorDefault
+
+	case strings.Contains(u, "CANCEL") || strings.Contains(u, "WON'T") ||
+		strings.Contains(u, "WONT") || u == "REJECTED" || u == "DUPLICATE":
+		return GlyphStatusCancelled, tcell.ColorDefault
+
+	case strings.Contains(u, "BLOCK") || strings.Contains(u, "HOLD") ||
+		u == "WAITING" || strings.Contains(u, "STALLED"):
+		return GlyphStatusBlocked, tcell.ColorDefault
+
+	case strings.Contains(u, "REVIEW") || u == "QA" ||
+		strings.Contains(u, "TEST") || strings.Contains(u, "VERIFY"):
+		return GlyphStatusInReview, tcell.ColorDefault
+
+	case strings.Contains(u, "PROGRESS") || u == "DOING" ||
+		u == "DEVELOPING" || strings.Contains(u, "WIP"):
+		return GlyphStatusInProgress, tcell.ColorDefault
+
+	case u == "TO DO" || u == "TODO" || u == "OPEN" || u == "NEW" ||
+		u == "BACKLOG" || u == "READY" || u == "SELECTED FOR DEVELOPMENT":
+		return GlyphStatusTodo, tcell.ColorDefault
+
 	default:
-		return GlyphStatusUnknown, themes.C(t.StatusTodo)
+		return GlyphStatusUnknown, tcell.ColorDefault
 	}
 }

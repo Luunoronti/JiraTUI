@@ -11,7 +11,7 @@ const legendPageName = "dialog-legend"
 // onClose is called when the dialog is dismissed.
 func ShowLegendDialog(app *tview.Application, pages *tview.Pages, onClose func()) {
 	const width = 62
-	const height = 42
+	const height = 52
 
 	content := `[::b]Glyphs — Issue Types[::-]
 
@@ -28,6 +28,16 @@ func ShowLegendDialog(app *tview.Application, pages *tview.Pages, onClose func()
   ─  Medium
   ▼  Low / Minor
   ⇊  Lowest / Trivial
+
+[::b]Glyphs — Statuses[::-]
+
+  ○  To Do / Open / Backlog / Ready
+  ◐  In Progress / Doing / WIP
+  ◑  In Review / Testing / QA
+  ✕  Blocked / On Hold / Waiting
+  ✓  Done / Closed / Resolved / Fixed
+  ⊘  Cancelled / Won't Do / Rejected
+  ?  Other / unrecognised
 
 [::b]Navigation[::-]
 

@@ -102,7 +102,7 @@ func (il *IssueList) computeColumns(availWidth int) []columnDef {
 	remaining -= summaryMin
 
 	// Optional columns — hide if not enough room
-	statusW := 15
+	statusW := 3 // glyph only, like Type and Priority
 	assigneeW := 12
 
 	showStatus := il.columns.Status
@@ -197,7 +197,7 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 		case "priority":
 			text = "P"
 		case "status":
-			text = "Status"
+			text = "S"
 		case "assignee":
 			text = "Assignee"
 		case "summary":
@@ -261,7 +261,9 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 					color = gc
 				}
 			case "status":
-				text = pad(truncate(issue.Status.Name, col.width), col.width)
+				// Show glyph (○◐◑✕✓⊘?) — no color override, inherits row fg.
+				glyph, _ := StatusGlyph(issue.Status.Name)
+				text = pad(glyph, col.width)
 			case "assignee":
 				name := ""
 				if issue.Assignee != nil {
