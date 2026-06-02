@@ -96,6 +96,19 @@ func (il *IssueList) IsShowingHidden() bool {
 	return il.showHidden
 }
 
+// anyHiddenInAll reports whether at least one issue in allIssues is hidden.
+func (il *IssueList) anyHiddenInAll() bool {
+	if il.meta == nil {
+		return false
+	}
+	for _, iss := range il.allIssues {
+		if il.meta.IsHidden(iss.Key) {
+			return true
+		}
+	}
+	return false
+}
+
 func (il *IssueList) SetIssues(issues []jira.Issue) {
 	il.errorMsg = ""
 	il.allIssues = issues
@@ -170,6 +183,17 @@ func (il *IssueList) computeColumns(availWidth int) []columnDef {
 	if showStatus {
 		cols = append(cols, columnDef{"status", statusW})
 	}
+
+	// Hidden-indicator column: only when viewing all issues and at least one is hidden.
+	const hiddenW = 3
+	showHiddenCol := il.showHidden && il.anyHiddenInAll()
+	if showHiddenCol {
+		if remaining >= hiddenW {
+			remaining -= hiddenW
+			cols = append(cols, columnDef{"hidden", hiddenW})
+		}
+	}
+
 	if showAssignee {
 		cols = append(cols, columnDef{"assignee", assigneeW})
 	}
@@ -279,6 +303,15 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 				// Show glyph (○◐◑✕✓⊘?) — no color override, inherits row fg.
 				glyph, _ := StatusGlyph(issue.Status.Name)
 				text = pad(glyph, col.width)
+			case "hidden":
+				if il.meta != nil && il.meta.IsHidden(issue.Key) {
+					text = pad(GlyphHidden, col.width)
+					if !isSelected {
+						color = themes.C(t.TextMuted)
+					}
+				} else {
+					text = pad("", col.width)
+				}
 			case "assignee":
 				name := ""
 				if issue.Assignee != nil {
@@ -286,11 +319,7 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 				}
 				text = pad(truncate(name, col.width), col.width)
 			case "summary":
-				summaryText := issue.Summary
-				if il.showHidden && il.meta != nil && il.meta.IsHidden(issue.Key) {
-					summaryText = GlyphHidden + " " + summaryText
-				}
-				text = pad(truncate(summaryText, col.width), col.width)
+				text = pad(truncate(issue.Summary, col.width), col.width)
 			}
 			return text, color, bgColor
 		})
