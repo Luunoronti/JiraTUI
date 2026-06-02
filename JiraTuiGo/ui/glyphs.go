@@ -95,33 +95,57 @@ func PriorityGlyph(priorityName string) (string, tcell.Color) {
 // (e.g. "In Testing", "Code Review", "Won't Fix") are handled correctly.
 // Color is always tcell.ColorDefault — status glyphs inherit the row
 // foreground so they don't clash with theme-specific row colours.
+// StatusGlyph maps a Jira status name to a display glyph.
+// Order matters — earlier cases take priority. "Ready For Review" matches
+// REVIEW before READY, so it gets ◑ not ○.
 func StatusGlyph(statusName string) (string, tcell.Color) {
 	u := strings.ToUpper(strings.TrimSpace(statusName))
 
 	switch {
+	// ✓ Done — completed, released, shipped, merged…
 	case u == "DONE" || u == "CLOSED" || u == "RESOLVED" ||
 		u == "COMPLETE" || u == "COMPLETED" || u == "FIXED" ||
-		strings.Contains(u, "DEPLOYED"):
+		u == "RELEASED" || u == "SHIPPED" || u == "DELIVERED" ||
+		u == "MERGED" || u == "ACCEPTED" || u == "VERIFIED" ||
+		strings.Contains(u, "DEPLOYED") || strings.Contains(u, "RELEASED"):
 		return GlyphStatusDone, tcell.ColorDefault
 
+	// ⊘ Cancelled — won't do, archived, rejected, invalid…
 	case strings.Contains(u, "CANCEL") || strings.Contains(u, "WON'T") ||
-		strings.Contains(u, "WONT") || u == "REJECTED" || u == "DUPLICATE":
+		strings.Contains(u, "WONT") || strings.Contains(u, "ARCHIVE") ||
+		u == "REJECTED" || u == "DUPLICATE" || u == "DECLINED" ||
+		u == "NOT A BUG" || u == "INVALID" || u == "ABANDONED":
 		return GlyphStatusCancelled, tcell.ColorDefault
 
+	// ✕ Blocked — on hold, suspended, paused, impediment…
 	case strings.Contains(u, "BLOCK") || strings.Contains(u, "HOLD") ||
-		u == "WAITING" || strings.Contains(u, "STALLED"):
+		strings.Contains(u, "STALL") || strings.Contains(u, "SUSPEND") ||
+		strings.Contains(u, "PAUSE") || strings.Contains(u, "IMPEDIMENT") ||
+		u == "WAITING":
 		return GlyphStatusBlocked, tcell.ColorDefault
 
-	case strings.Contains(u, "REVIEW") || u == "QA" ||
-		strings.Contains(u, "TEST") || strings.Contains(u, "VERIFY"):
+	// ◑ In Review / Testing — check before READY so "Ready For Review" → ◑
+	case strings.Contains(u, "REVIEW") || strings.Contains(u, "TEST") ||
+		strings.Contains(u, "VERIFY") || strings.Contains(u, "VALIDAT") ||
+		strings.Contains(u, "AUDIT") || strings.Contains(u, "INSPECT") ||
+		u == "QA" || strings.Contains(u, "QA ") || strings.Contains(u, " QA"):
 		return GlyphStatusInReview, tcell.ColorDefault
 
-	case strings.Contains(u, "PROGRESS") || u == "DOING" ||
-		u == "DEVELOPING" || strings.Contains(u, "WIP"):
+	// ◐ In Progress — active work, building, deploying, analysis…
+	case strings.Contains(u, "PROGRESS") || strings.Contains(u, "DOING") ||
+		strings.Contains(u, "DEVELOP") || strings.Contains(u, "WIP") ||
+		strings.Contains(u, "BUILD") || strings.Contains(u, "DEPLOY") ||
+		strings.Contains(u, "IMPLEMENT") || strings.Contains(u, "ANALYS") ||
+		strings.Contains(u, "CODING") || strings.Contains(u, "WORKING"):
 		return GlyphStatusInProgress, tcell.ColorDefault
 
+	// ○ To Do — queued, ready to start, planned, pending…
 	case u == "TO DO" || u == "TODO" || u == "OPEN" || u == "NEW" ||
-		u == "BACKLOG" || u == "READY" || u == "SELECTED FOR DEVELOPMENT":
+		u == "BACKLOG" || u == "APPROVED" || u == "PLANNED" ||
+		strings.Contains(u, "READY") || strings.Contains(u, "SELECTED") ||
+		strings.Contains(u, "PENDING") || strings.Contains(u, "SCHEDULED") ||
+		strings.Contains(u, "GROOMED") || strings.Contains(u, "REFINEMENT") ||
+		strings.Contains(u, "PRIORITI"):
 		return GlyphStatusTodo, tcell.ColorDefault
 
 	default:
