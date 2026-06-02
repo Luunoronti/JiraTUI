@@ -151,31 +151,69 @@ func (jb *JqlBar) Draw(screen tcell.Screen) {
 		return
 	}
 
+	bg := themes.C(t.JqlBg)
+	fg := themes.C(t.JqlFg)
+	labelFg := themes.C(t.StatusKeyFg)
+
+	// Fill the entire inner row with background first.  Without this, cells
+	// not written by the InputField (empty positions after the typed text)
+	// retain whatever the underlying layer (issue list) drew there — often
+	// ACS box-drawing 'q' characters, which look like literal 'q' on screen.
+	blankStyle := tcell.StyleDefault.Background(bg)
+	for cx := innerX; cx < innerX+innerW; cx++ {
+		screen.SetContent(cx, innerY, ' ', nil, blankStyle)
+	}
+
 	// Right-aligned hint — only shown when there is enough room.
 	const hint = "  Enter:run  ↑↓:history  Ctrl-J:close  "
 	hintRunes := []rune(hint)
 	inputW := innerW
-	if innerW >= 60 {
-		hintW := len(hintRunes)
-		if hintW < innerW-10 {
-			inputW = innerW - hintW
-
-			hintStyle := tcell.StyleDefault.
-				Foreground(themes.C(t.JqlHintFg)).
-				Background(themes.C(t.JqlBg))
-			hx := innerX + inputW
-			for j, r := range hintRunes {
-				if hx+j >= innerX+innerW {
-					break
-				}
-				screen.SetContent(hx+j, innerY, r, nil, hintStyle)
+	if innerW >= 60 && len(hintRunes) < innerW-10 {
+		inputW = innerW - len(hintRunes)
+		hintStyle := tcell.StyleDefault.
+			Foreground(themes.C(t.JqlHintFg)).
+			Background(bg)
+		for j, r := range hintRunes {
+			hx := innerX + inputW + j
+			if hx >= innerX+innerW {
+				break
 			}
+			screen.SetContent(hx, innerY, r, nil, hintStyle)
 		}
 	}
 
-	// Position and draw the input field.
-	jb.input.SetRect(innerX, innerY, inputW, 1)
-	jb.input.Draw(screen)
+	// Draw label " JQL: " manually so we control the background color.
+	label := []rune(" JQL: ")
+	labelStyle := tcell.StyleDefault.Foreground(labelFg).Background(bg)
+	cx := innerX
+	for _, r := range label {
+		if cx >= innerX+inputW {
+			break
+		}
+		screen.SetContent(cx, innerY, r, nil, labelStyle)
+		cx++
+	}
+
+	// Draw text and fill remaining positions with background.
+	text := []rune(jb.input.GetText())
+	textStyle := tcell.StyleDefault.Foreground(fg).Background(bg)
+	for _, r := range text {
+		if cx >= innerX+inputW {
+			break
+		}
+		screen.SetContent(cx, innerY, r, nil, textStyle)
+		cx++
+	}
+	cursorX := cx // where the cursor (next-character position) lives
+	for cx < innerX+inputW {
+		screen.SetContent(cx, innerY, ' ', nil, textStyle)
+		cx++
+	}
+
+	// Show cursor when the bar is focused.
+	if jb.input.HasFocus() && cursorX < innerX+inputW {
+		screen.ShowCursor(cursorX, innerY)
+	}
 }
 
 // ─── history navigation ───────────────────────────────────────────────────────
