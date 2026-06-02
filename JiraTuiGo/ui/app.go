@@ -108,7 +108,7 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 
 	// Daily update check — runs in background, never crashes the app.
 	go func() {
-		if version != "dev" && time.Since(cfg.Behavior.LastUpdateCheck) < 24*time.Hour {
+		if version != "dev" && time.Since(cfg.Behavior.LastUpdateCheck) < 15*time.Minute {
 			return
 		}
 		release, err := updater.Check(app.repoOwner, app.repoName, version)
