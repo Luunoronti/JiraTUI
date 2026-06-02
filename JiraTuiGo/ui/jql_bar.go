@@ -121,6 +121,17 @@ func (jb *JqlBar) HasFocus() bool {
 	return jb.input.HasFocus()
 }
 
+// InputHandler delegates key events to the embedded InputField.
+// Without this, tview.Pages routes events to JqlBar but tview.Box's default
+// handler does nothing — the InputField never receives keystrokes.
+func (jb *JqlBar) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+	return jb.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		if h := jb.input.InputHandler(); h != nil {
+			h(event, setFocus)
+		}
+	})
+}
+
 // ─── Draw ────────────────────────────────────────────────────────────────────
 
 func (jb *JqlBar) Draw(screen tcell.Screen) {
