@@ -19,6 +19,7 @@ type mainWindow struct {
 	menuBar      *tview.TextView
 	app          *tview.Application
 	currentJql   string
+	updateVersion string // "" = none; "v0.2.1" = update available; "restart" = restart needed
 
 	// onNavClose is called when the too-small transition hides the nav page,
 	// so the App can sync its navVisible flag without queuing extra draws.
@@ -195,7 +196,28 @@ func (mw *mainWindow) updateStatusBar(width int) {
 		issueCount = "  " + mw.issueList.statusLine()
 	}
 
+	if mw.updateVersion != "" {
+		var indicator string
+		if mw.updateVersion == "restart" {
+			indicator = "  ↑ Restart to apply update"
+		} else {
+			indicator = "  ↑ " + mw.updateVersion + " — Ctrl-U"
+		}
+		mw.statusBar.SetText(" " + text + issueCount + indicator)
+		return
+	}
 	mw.statusBar.SetText(" " + text + issueCount)
+}
+
+// SetUpdateAvailable sets the update indicator string and refreshes the status bar.
+// Safe to call from any goroutine via QueueUpdateDraw.
+func (mw *mainWindow) SetUpdateAvailable(version string) {
+	mw.updateVersion = version
+	_, _, w, _ := mw.pages.GetRect()
+	if w <= 0 {
+		w = 120 // fallback width before first draw
+	}
+	mw.updateStatusBar(w)
 }
 
 // refreshColors re-applies theme colors to tview-managed primitives (menu bar,

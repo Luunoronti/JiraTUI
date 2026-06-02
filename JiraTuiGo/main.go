@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	version   = "dev"
+	commit    = "none"
+	date      = "unknown"
+	repoOwner = "Luunoronti"
+	repoName  = "JiraTUI"
 )
 
 func main() {
@@ -45,7 +47,7 @@ func main() {
 		client = jira.NewRealClient(cfg.Conn.BaseURL, cfg.Conn.Email, config.Unprotect(cfg.Conn.TokenProtected))
 	}
 
-	if err := ui.Run(cfg, client, version); err != nil {
+	if err := ui.Run(cfg, client, version, repoOwner, repoName); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

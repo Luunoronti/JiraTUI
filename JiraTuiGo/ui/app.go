@@ -12,6 +12,7 @@ import (
 	"jiratui/jira"
 	"jiratui/themes"
 	"jiratui/ui/dialogs"
+	"jiratui/updater"
 )
 
 type App struct {
@@ -24,6 +25,10 @@ type App struct {
 	client           jira.Client
 	aiClient         ai.AiClient // nil if not configured
 	version          string
+	repoOwner        string
+	repoName         string
+	latestRelease    *updater.Release
+	updateAssetName  string
 	currentJql       string
 	navVisible       bool
 	detailVisible    bool
@@ -33,7 +38,7 @@ type App struct {
 	modalOpen        int // >0 when a dialog is on screen
 }
 
-func Run(cfg *config.AppConfig, client jira.Client, version string) error {
+func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName string) error {
 	tapp := tview.NewApplication()
 
 	history := config.NewJqlHistory()
@@ -53,6 +58,8 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 		cfg:        cfg,
 		client:     client,
 		version:    version,
+		repoOwner:  repoOwner,
+		repoName:   repoName,
 		currentJql: cfg.Behavior.DefaultJql,
 	}
 
@@ -99,6 +106,25 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 		})
 	}()
 
+	// Daily update check — runs in background, never crashes the app.
+	go func() {
+		if version != "dev" && time.Since(cfg.Behavior.LastUpdateCheck) < 24*time.Hour {
+			return
+		}
+		release, err := updater.Check(app.repoOwner, app.repoName, version)
+		if err != nil || release == nil {
+			return
+		}
+		cfg.Behavior.LastUpdateCheck = time.Now()
+		_ = cfg.Save()
+		app.latestRelease = release
+		assetName := updater.AssetName()
+		app.updateAssetName = assetName
+		tapp.QueueUpdateDraw(func() {
+			mw.SetUpdateAvailable(release.Version)
+		})
+	}()
+
 	// Global key handler.
 	tapp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		// F2 is always available — even when another modal is open we allow
@@ -111,6 +137,12 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 		// Ctrl-G opens the AI JQL dialog (only when no modal is open).
 		if event.Key() == tcell.KeyCtrlG && app.modalOpen == 0 {
 			app.openAiJql()
+			return nil
+		}
+
+		// Ctrl-U opens the update dialog when an update is available.
+		if event.Key() == tcell.KeyCtrlU && app.modalOpen == 0 && app.latestRelease != nil {
+			app.openUpdateDialog()
 			return nil
 		}
 
@@ -609,6 +641,27 @@ func (app *App) showColumns() {
 		},
 		func() {
 			app.modalOpen--
+			app.restoreFocus()
+		},
+	)
+}
+
+// ─── update ───────────────────────────────────────────────────────────────────
+
+func (app *App) openUpdateDialog() {
+	app.modalOpen++
+	dialogs.ShowUpdateDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		app.version,
+		app.latestRelease,
+		app.updateAssetName,
+		func() {
+			app.modalOpen--
+			// Mark restart needed after a successful apply (onClose is called
+			// regardless of outcome; the dialog already shows the correct status
+			// text, so we just persist the indicator in the status bar).
+			app.mainWindow.SetUpdateAvailable("restart")
 			app.restoreFocus()
 		},
 	)

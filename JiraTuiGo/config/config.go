@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 type ConnectionConfig struct {
@@ -19,9 +20,10 @@ type AppearanceConfig struct {
 }
 
 type BehaviorConfig struct {
-	DefaultJql         string `json:"defaultJql"`
-	PageSize           int    `json:"pageSize"`
-	AutoRefreshSeconds int    `json:"autoRefreshSeconds"`
+	DefaultJql         string    `json:"defaultJql"`
+	PageSize           int       `json:"pageSize"`
+	AutoRefreshSeconds int       `json:"autoRefreshSeconds"`
+	LastUpdateCheck    time.Time `json:"lastUpdateCheck,omitempty"`
 }
 
 type AiConfig struct {
