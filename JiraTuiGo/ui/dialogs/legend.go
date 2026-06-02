@@ -31,7 +31,8 @@ func ShowLegendDialog(app *tview.Application, pages *tview.Pages, onClose func()
 
 [::b]Glyphs — Statuses[::-]
 
-  ○  To Do / Ready For X / Pending / Planned
+  ○  To Do / Open / Backlog / Planned
+  ▷  Ready / Queued / Approved / Scheduled / Pending
   ◐  In Progress / Building / Developing / WIP
   ◑  In Review / Ready For Review / Testing / QA
   ✕  Blocked / On Hold / Suspended / Paused

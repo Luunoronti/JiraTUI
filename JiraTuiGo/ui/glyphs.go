@@ -39,6 +39,7 @@ const (
 // Status glyphs
 const (
 	GlyphStatusTodo       = "○"
+	GlyphStatusQueued     = "▷" // ready/queued — between backlog and active work
 	GlyphStatusInProgress = "◐"
 	GlyphStatusInReview   = "◑"
 	GlyphStatusBlocked    = "✕"
@@ -129,12 +130,20 @@ func StatusGlyph(statusName string) (string, tcell.Color) {
 		u == "WAITING":
 		return GlyphStatusBlocked, tcell.ColorDefault
 
-	// ◑ In Review / Testing — check before READY so "Ready For Review" → ◑
+	// ◑ In Review / Testing — checked before READY so "Ready For Review" → ◑
 	case strings.Contains(u, "REVIEW") || strings.Contains(u, "TEST") ||
 		strings.Contains(u, "VERIFY") || strings.Contains(u, "VALIDAT") ||
 		strings.Contains(u, "AUDIT") || strings.Contains(u, "INSPECT") ||
 		u == "QA" || strings.Contains(u, "QA ") || strings.Contains(u, " QA"):
 		return GlyphStatusInReview, tcell.ColorDefault
+
+	// ▷ Queued / Ready — selected and waiting to start active work.
+	// Checked BEFORE In Progress so "Ready For Build" → ▷, not ◐.
+	case strings.Contains(u, "READY") || strings.Contains(u, "SELECTED") ||
+		strings.Contains(u, "APPROVED") || strings.Contains(u, "SCHEDULED") ||
+		strings.Contains(u, "GROOMED") || strings.Contains(u, "REFINEMENT") ||
+		strings.Contains(u, "PRIORITI") || strings.Contains(u, "PENDING"):
+		return GlyphStatusQueued, tcell.ColorDefault
 
 	// ◐ In Progress — active work, building, deploying, analysis…
 	case strings.Contains(u, "PROGRESS") || strings.Contains(u, "DOING") ||
@@ -144,13 +153,9 @@ func StatusGlyph(statusName string) (string, tcell.Color) {
 		strings.Contains(u, "CODING") || strings.Contains(u, "WORKING"):
 		return GlyphStatusInProgress, tcell.ColorDefault
 
-	// ○ To Do — queued, ready to start, planned, pending…
+	// ○ To Do — pure backlog, nothing selected yet
 	case u == "TO DO" || u == "TODO" || u == "OPEN" || u == "NEW" ||
-		u == "BACKLOG" || u == "APPROVED" || u == "PLANNED" ||
-		strings.Contains(u, "READY") || strings.Contains(u, "SELECTED") ||
-		strings.Contains(u, "PENDING") || strings.Contains(u, "SCHEDULED") ||
-		strings.Contains(u, "GROOMED") || strings.Contains(u, "REFINEMENT") ||
-		strings.Contains(u, "PRIORITI"):
+		u == "BACKLOG" || u == "PLANNED":
 		return GlyphStatusTodo, tcell.ColorDefault
 
 	default:
