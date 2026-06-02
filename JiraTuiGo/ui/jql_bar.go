@@ -9,33 +9,28 @@ import (
 	"jiratui/themes"
 )
 
-const jqlBarHeight = 3 // top border + input row + bottom border
+const jqlBarHeight = 6 // top border + 4 content rows + bottom border
 
-// JqlBar is a floating single-line input overlay anchored at the bottom of the
-// terminal, just above the status bar. It manages its own rect in Draw() so it
-// reflows on every resize without cached coordinates.
-//
-// Focus is delegated to the embedded InputField so tview's text-editing
-// machinery works normally; special keys (Up/Down for history, Escape, Ctrl-J)
-// are intercepted via SetInputCapture before they reach the field.
+// JqlBar is a floating multi-line input overlay anchored above the status bar.
+// It uses tview.TextArea so long queries wrap and remain fully visible.
+// Enter submits; Up/Down navigate history; Escape clears/closes; Ctrl-J closes.
 type JqlBar struct {
 	*tview.Box
 
-	input   *tview.InputField
+	input   *tview.TextArea
 	history *config.JqlHistory
 
-	// history navigation state
 	histIdx   int    // -1 = not browsing; 0 = newest entry
 	savedText string // text saved before browsing started
 
-	OnSubmit func(jql string) // called with the query text when user presses Enter
-	OnClose  func()           // called when the bar should be hidden
+	OnSubmit func(jql string)
+	OnClose  func()
 }
 
 func NewJqlBar(history *config.JqlHistory) *JqlBar {
 	jb := &JqlBar{
 		Box:     tview.NewBox(),
-		input:   tview.NewInputField(),
+		input:   tview.NewTextArea(),
 		history: history,
 		histIdx: -1,
 	}
@@ -46,14 +41,17 @@ func NewJqlBar(history *config.JqlHistory) *JqlBar {
 	jb.Box.SetBackgroundColor(themes.C(t.JqlBg))
 	jb.Box.SetBorderColor(themes.C(t.Border))
 
-	jb.input.SetLabel(" JQL: ")
-	jb.input.SetLabelColor(themes.C(t.StatusKeyFg))
-	jb.input.SetFieldBackgroundColor(themes.C(t.JqlBg))
-	jb.input.SetFieldTextColor(themes.C(t.JqlFg))
+	jb.input.SetWrap(true)
+	jb.input.SetWordWrap(true)
+	jb.input.SetTextStyle(tcell.StyleDefault.
+		Foreground(themes.C(t.JqlFg)).
+		Background(themes.C(t.JqlBg)))
 
-	// Intercept special keys before the InputField's default handler sees them.
 	jb.input.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
+		case tcell.KeyEnter:
+			jb.submit()
+			return nil
 		case tcell.KeyUp:
 			jb.historyOlder()
 			return nil
@@ -62,7 +60,7 @@ func NewJqlBar(history *config.JqlHistory) *JqlBar {
 			return nil
 		case tcell.KeyEscape:
 			if jb.input.GetText() != "" {
-				jb.input.SetText("")
+				jb.input.SetText("", false)
 			} else if jb.OnClose != nil {
 				jb.OnClose()
 			}
@@ -73,17 +71,7 @@ func NewJqlBar(history *config.JqlHistory) *JqlBar {
 			}
 			return nil
 		}
-		// Any regular typing resets history browsing.
-		if event.Rune() != 0 {
-			jb.histIdx = -1
-		}
 		return event
-	})
-
-	jb.input.SetDoneFunc(func(key tcell.Key) {
-		if key == tcell.KeyEnter {
-			jb.submit()
-		}
 	})
 
 	return jb
@@ -91,19 +79,15 @@ func NewJqlBar(history *config.JqlHistory) *JqlBar {
 
 // ─── public API ──────────────────────────────────────────────────────────────
 
-// SetText replaces the current text and resets history browsing.
 func (jb *JqlBar) SetText(text string) {
 	jb.histIdx = -1
-	jb.input.SetText(text)
+	jb.input.SetText(text, true)
 }
 
-// GetText returns the current input text.
 func (jb *JqlBar) GetText() string {
-	return jb.input.GetText()
+	return cleanJql(jb.input.GetText())
 }
 
-// FocusAndSelectAll gives focus to the input field and selects all text
-// (so the user can start typing to replace without clearing manually).
 func (jb *JqlBar) FocusAndSelectAll(app *tview.Application) {
 	jb.histIdx = -1
 	app.SetFocus(jb)
@@ -111,19 +95,14 @@ func (jb *JqlBar) FocusAndSelectAll(app *tview.Application) {
 
 // ─── Focus delegation ─────────────────────────────────────────────────────────
 
-// Focus delegates to the embedded InputField so tview sends key events there.
 func (jb *JqlBar) Focus(delegate func(p tview.Primitive)) {
 	delegate(jb.input)
 }
 
-// HasFocus reports whether the embedded input field is focused.
 func (jb *JqlBar) HasFocus() bool {
 	return jb.input.HasFocus()
 }
 
-// InputHandler delegates key events to the embedded InputField.
-// Without this, tview.Pages routes events to JqlBar but tview.Box's default
-// handler does nothing — the InputField never receives keystrokes.
 func (jb *JqlBar) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return jb.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 		if h := jb.input.InputHandler(); h != nil {
@@ -135,10 +114,9 @@ func (jb *JqlBar) InputHandler() func(event *tcell.EventKey, setFocus func(p tvi
 // ─── Draw ────────────────────────────────────────────────────────────────────
 
 func (jb *JqlBar) Draw(screen tcell.Screen) {
-	t := themes.Current()
-	termW, termH := screen.Size()
+	_, termH := screen.Size()
+	termW, _ := screen.Size()
 
-	// Anchor above the status bar.
 	y := termH - 1 - jqlBarHeight
 	if y < 0 {
 		y = 0
@@ -146,74 +124,13 @@ func (jb *JqlBar) Draw(screen tcell.Screen) {
 	jb.Box.SetRect(0, y, termW, jqlBarHeight)
 	jb.Box.DrawForSubclass(screen, jb)
 
-	innerX, innerY, innerW, _ := jb.GetInnerRect()
-	if innerW <= 0 {
+	innerX, innerY, innerW, innerH := jb.GetInnerRect()
+	if innerW <= 0 || innerH <= 0 {
 		return
 	}
 
-	bg := themes.C(t.JqlBg)
-	fg := themes.C(t.JqlFg)
-	labelFg := themes.C(t.StatusKeyFg)
-
-	// Fill the entire inner row with background first.  Without this, cells
-	// not written by the InputField (empty positions after the typed text)
-	// retain whatever the underlying layer (issue list) drew there — often
-	// ACS box-drawing 'q' characters, which look like literal 'q' on screen.
-	blankStyle := tcell.StyleDefault.Background(bg)
-	for cx := innerX; cx < innerX+innerW; cx++ {
-		screen.SetContent(cx, innerY, ' ', nil, blankStyle)
-	}
-
-	// Right-aligned hint — only shown when there is enough room.
-	const hint = "  Enter:run  ↑↓:history  Ctrl-J:close  "
-	hintRunes := []rune(hint)
-	inputW := innerW
-	if innerW >= 60 && len(hintRunes) < innerW-10 {
-		inputW = innerW - len(hintRunes)
-		hintStyle := tcell.StyleDefault.
-			Foreground(themes.C(t.JqlHintFg)).
-			Background(bg)
-		for j, r := range hintRunes {
-			hx := innerX + inputW + j
-			if hx >= innerX+innerW {
-				break
-			}
-			screen.SetContent(hx, innerY, r, nil, hintStyle)
-		}
-	}
-
-	// Draw label " JQL: " manually so we control the background color.
-	label := []rune(" JQL: ")
-	labelStyle := tcell.StyleDefault.Foreground(labelFg).Background(bg)
-	cx := innerX
-	for _, r := range label {
-		if cx >= innerX+inputW {
-			break
-		}
-		screen.SetContent(cx, innerY, r, nil, labelStyle)
-		cx++
-	}
-
-	// Draw text and fill remaining positions with background.
-	text := []rune(jb.input.GetText())
-	textStyle := tcell.StyleDefault.Foreground(fg).Background(bg)
-	for _, r := range text {
-		if cx >= innerX+inputW {
-			break
-		}
-		screen.SetContent(cx, innerY, r, nil, textStyle)
-		cx++
-	}
-	cursorX := cx // where the cursor (next-character position) lives
-	for cx < innerX+inputW {
-		screen.SetContent(cx, innerY, ' ', nil, textStyle)
-		cx++
-	}
-
-	// Show cursor when the bar is focused.
-	if jb.input.HasFocus() && cursorX < innerX+inputW {
-		screen.ShowCursor(cursorX, innerY)
-	}
+	jb.input.SetRect(innerX, innerY, innerW, innerH)
+	jb.input.Draw(screen)
 }
 
 // ─── history navigation ───────────────────────────────────────────────────────
@@ -225,34 +142,38 @@ func (jb *JqlBar) historyOlder() {
 	next := jb.histIdx + 1
 	if e, ok := jb.history.GetByRecentIndex(next); ok {
 		jb.histIdx = next
-		jb.input.SetText(e.EffectiveJql)
+		jb.input.SetText(e.EffectiveJql, true)
 	}
 }
 
 func (jb *JqlBar) historyNewer() {
 	if jb.histIdx <= 0 {
-		// Past the newest entry — restore saved text and stop browsing.
 		jb.histIdx = -1
-		jb.input.SetText(jb.savedText)
+		jb.input.SetText(jb.savedText, true)
 		return
 	}
 	jb.histIdx--
 	if e, ok := jb.history.GetByRecentIndex(jb.histIdx); ok {
-		jb.input.SetText(e.EffectiveJql)
+		jb.input.SetText(e.EffectiveJql, true)
 	}
 }
 
 // ─── submit ───────────────────────────────────────────────────────────────────
 
 func (jb *JqlBar) submit() {
-	jql := strings.TrimSpace(jb.input.GetText())
+	jql := cleanJql(jb.input.GetText())
 	if jql == "" {
 		return
 	}
 	jb.history.Add(jql, jql, false)
-	_ = jb.history.Save() // best-effort; ignore errors
+	_ = jb.history.Save()
 	jb.histIdx = -1
 	if jb.OnSubmit != nil {
 		jb.OnSubmit(jql)
 	}
+}
+
+// cleanJql strips newlines (TextArea may insert them on wrap) and trims space.
+func cleanJql(s string) string {
+	return strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 }
