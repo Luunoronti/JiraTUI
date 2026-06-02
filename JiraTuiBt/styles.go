@@ -3,22 +3,23 @@ package main
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	// Colors (catppuccin Mocha inspired)
-	colBg         = lipgloss.Color("#1e1e2e")
-	colSurface    = lipgloss.Color("#313244")
-	colOverlay    = lipgloss.Color("#45475a")
-	colText       = lipgloss.Color("#cdd6f4")
-	colMuted      = lipgloss.Color("#6c7086")
-	colEmphasis   = lipgloss.Color("#89b4fa")
-	colGreen      = lipgloss.Color("#a6e3a1")
-	colRed        = lipgloss.Color("#f38ba8")
-	colMenuBg     = lipgloss.Color("#181825")
-	colSelected   = lipgloss.Color("#313244")
-	colSelText    = lipgloss.Color("#cba6f7")
-	colDropBg     = lipgloss.Color("#24273a")
-	colDropBorder = lipgloss.Color("#89b4fa")
-	colStatusBg   = lipgloss.Color("#181825")
-	colStatusFg   = lipgloss.Color("#6c7086")
+	// TurboPascal 5 colour scheme
+	// Classic blue IDE with cyan highlights and yellow hotkeys.
+	colBg         = lipgloss.Color("#0000AA") // deep blue background
+	colSurface    = lipgloss.Color("#005555") // dialog / detail surface
+	colOverlay    = lipgloss.Color("#008888") // separator / muted
+	colText       = lipgloss.Color("#FFFFFF") // white body text
+	colMuted      = lipgloss.Color("#00AAAA") // cyan muted
+	colEmphasis   = lipgloss.Color("#FFFF55") // yellow — hotkeys / titles
+	colGreen      = lipgloss.Color("#55FF55") // bright green
+	colRed        = lipgloss.Color("#FF5555") // bright red
+	colMenuBg     = lipgloss.Color("#000080") // slightly darker menu bar
+	colSelected   = lipgloss.Color("#00AAAA") // cyan selection bar
+	colSelText    = lipgloss.Color("#000000") // black text on selection
+	colDropBg     = lipgloss.Color("#008888") // dropdown background (teal)
+	colDropBorder = lipgloss.Color("#FFFF55") // yellow border
+	colStatusBg   = lipgloss.Color("#000080")
+	colStatusFg   = lipgloss.Color("#00AAAA")
 )
 
 var (
@@ -31,13 +32,13 @@ var (
 			Foreground(colText)
 
 	styleMenuActive = lipgloss.NewStyle().
-			Background(colEmphasis).
-			Foreground(colMenuBg).
+			Background(colSelected).
+			Foreground(colSelText).
 			Bold(true)
 
 	styleDropdownBox = lipgloss.NewStyle().
 				Background(colDropBg).
-				Border(lipgloss.RoundedBorder()).
+				Border(lipgloss.NormalBorder()).
 				BorderForeground(colDropBorder).
 				Padding(0, 0)
 
@@ -46,8 +47,8 @@ var (
 				Foreground(colText)
 
 	styleDropdownSel = lipgloss.NewStyle().
-				Background(colEmphasis).
-				Foreground(colMenuBg).
+				Background(colSelected).
+				Foreground(colSelText).
 				Bold(true)
 
 	styleDropdownSep = lipgloss.NewStyle().
@@ -66,8 +67,8 @@ var (
 	styleDetailBox = lipgloss.NewStyle().
 			Background(colSurface).
 			Foreground(colText).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colEmphasis).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(colDropBorder).
 			Padding(0, 1)
 
 	styleDetailKey = lipgloss.NewStyle().
