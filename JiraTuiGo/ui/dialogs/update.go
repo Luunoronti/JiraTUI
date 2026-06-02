@@ -134,16 +134,21 @@ func ShowUpdateDialog(
 	}
 
 	// runUpdate is kicked off when the user clicks [Update].
+	// IMPORTANT: never call app.QueueUpdateDraw() from SetSelectedFunc — it
+	// runs on the UI goroutine which already holds tview's mutex, so calling
+	// QueueUpdateDraw there deadlocks. All UI updates must happen inside the
+	// goroutine (where QueueUpdateDraw is safe).
 	runUpdate := func() {
 		currentPhase = phaseRunning
-		// Hide buttons, show progress area.
-		app.QueueUpdateDraw(func() {
-			updateBtn.SetLabel("          ")
-			cancelBtn.SetLabel("  Close   ")
-			app.SetFocus(cancelBtn)
-		})
 
 		go func() {
+			// Update button labels from goroutine (safe to call QueueUpdateDraw here).
+			app.QueueUpdateDraw(func() {
+				updateBtn.SetLabel("          ")
+				cancelBtn.SetLabel("  Close   ")
+				app.SetFocus(cancelBtn)
+			})
+
 			// Download.
 			setStatus("Downloading...")
 			data, err := updater.Download(release.DownloadURL, setProgress)
