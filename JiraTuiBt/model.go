@@ -220,17 +220,23 @@ func (m model) updateMenuOpen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// listHeight returns how many issue rows are available
+// listHeight returns how many issue rows are available.
+// Dropdown is an overlay so it never reduces list height.
 func (m model) listHeight() int {
-	// height - menuBar(1) - statusBar(1) - dropdown(if open)
-	h := m.height - 2
-	if m.menuOpen {
-		h -= m.dropdownHeight()
-	}
+	h := m.height - 2 // menu bar + status bar
 	if h < 1 {
 		h = 1
 	}
 	return h
+}
+
+// menuTitleX returns the visual x position where menu[idx] title starts.
+func (m model) menuTitleX(idx int) int {
+	x := 1 // leading space
+	for i := 0; i < idx; i++ {
+		x += 2 + len(menuTitles[i]) + 2 // " Title " per entry
+	}
+	return x
 }
 
 func (m model) dropdownHeight() int {
@@ -245,18 +251,26 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
-	parts := []string{
+	// Render full background at normal height (dropdown does NOT shift content).
+	fullHeight := m.height - 2 // minus menu bar and status bar
+	if fullHeight < 1 {
+		fullHeight = 1
+	}
+
+	bg := lipgloss.JoinVertical(lipgloss.Left,
 		m.renderMenuBar(),
+		m.renderContent(fullHeight),
+		m.renderStatusBar(),
+	)
+
+	if !m.menuOpen {
+		return bg
 	}
 
-	if m.menuOpen {
-		parts = append(parts, m.renderDropdown())
-	}
-
-	parts = append(parts, m.renderContent())
-	parts = append(parts, m.renderStatusBar())
-
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	// Overlay dropdown on top of the background at (x=menuTitleX, y=1).
+	dropdown := m.renderDropdown()
+	x := m.menuTitleX(m.activeMenu)
+	return overlayAt(bg, dropdown, x, 1)
 }
 
 // ─── rendering helpers ────────────────────────────────────────────────────────
@@ -287,12 +301,6 @@ func (m model) renderMenuBar() string {
 func (m model) renderDropdown() string {
 	items := menuItems[m.activeMenu]
 
-	// Find x position of active menu title
-	x := 1 // leading space
-	for i := 0; i < m.activeMenu; i++ {
-		x += len(" "+menuTitles[i]+" ") + 2 // title + padding
-	}
-
 	var rows []string
 	for i, item := range items {
 		if item.sep {
@@ -313,20 +321,10 @@ func (m model) renderDropdown() string {
 	}
 
 	content := strings.Join(rows, "\n")
-	box := styleDropdownBox.Render(content)
-
-	// Indent by x to align under the menu title
-	indent := strings.Repeat(" ", x)
-	var indented []string
-	for _, line := range strings.Split(box, "\n") {
-		indented = append(indented, indent+line)
-	}
-	return strings.Join(indented, "\n")
+	return styleDropdownBox.Render(content)
 }
 
-func (m model) renderContent() string {
-	h := m.listHeight()
-
+func (m model) renderContent(h int) string {
 	if m.showDetail && m.selected < len(m.issues) {
 		// Side-by-side: list on left, detail on right
 		listW := m.width * 55 / 100
