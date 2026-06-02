@@ -52,6 +52,7 @@ func ShowLegendDialog(app *tview.Application, pages *tview.Pages, onClose func()
   Ctrl-G   AI JQL generation
   Ctrl-L   This legend
   Ctrl-R   Refresh
+  Ctrl-\   Column visibility
   Ctrl-Q   Quit
 
   ↑ ↓      Navigate history (in JQL bar)

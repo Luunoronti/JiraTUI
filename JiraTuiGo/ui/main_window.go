@@ -184,7 +184,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 		{"Ctrl-B", "Nav"},
 		{"Ctrl-D", "Detail"},
 		{"Ctrl-J", "JQL"},
-		{"Ctrl-G", "AI"},
+		{"Ctrl-\\", "Columns"},
 		{"Ctrl-L", "Legend"},
 		{"Ctrl-Q", "Quit"},
 	}

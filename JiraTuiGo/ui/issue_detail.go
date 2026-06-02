@@ -55,59 +55,71 @@ func renderIssue(issue jira.Issue, width int) string {
 
 	var sb strings.Builder
 
-	sb.WriteString(issue.Key + "\n")
+	// ── Header: glyph + key + type ───────────────────────────────────────────
+	typeGlyph, _ := IssueTypeGlyph(issue.IssueType.Name)
+	sb.WriteString(typeGlyph + " " + issue.Key + "  " + issue.IssueType.Name + "\n")
 	sb.WriteString(sep + "\n")
 
-	// Type · Priority · Status
-	typePriStatus := issue.IssueType.Name + " · " + issue.Priority.Name + " · " + issue.Status.Name
-	sb.WriteString(typePriStatus + "\n")
+	// ── Fields (label-aligned, matching C# layout) ────────────────────────────
+	field := func(label, value string) {
+		if value == "" {
+			return
+		}
+		sb.WriteString(fmt.Sprintf("%-9s: %s\n", label, value))
+	}
 
-	// Assignee
+	// Summary (wrapped to width)
+	if issue.Summary != "" {
+		sb.WriteString(fmt.Sprintf("%-9s: %s\n", "Summary", wordWrap(issue.Summary, width-11)))
+	}
+
+	// Status with glyph
+	statusGlyph, _ := StatusGlyph(issue.Status.Name)
+	field("Status", statusGlyph+" "+issue.Status.Name)
+
+	// Priority with glyph
+	priGlyph, _ := PriorityGlyph(issue.Priority.Name)
+	field("Priority", priGlyph+" "+issue.Priority.Name)
+
+	// People
 	assignee := "(unassigned)"
 	if issue.Assignee != nil && issue.Assignee.DisplayName != "" {
 		assignee = issue.Assignee.DisplayName
 	}
-	sb.WriteString(fmt.Sprintf("Assignee:  %s\n", assignee))
+	field("Assignee", assignee)
 
-	// Reporter
-	reporter := "(none)"
 	if issue.Reporter != nil && issue.Reporter.DisplayName != "" {
-		reporter = issue.Reporter.DisplayName
+		field("Reporter", issue.Reporter.DisplayName)
 	}
-	sb.WriteString(fmt.Sprintf("Reporter:  %s\n", reporter))
+
+	// Sprint
+	field("Sprint", issue.Sprint)
 
 	// Updated
 	if !issue.Updated.IsZero() {
-		sb.WriteString(fmt.Sprintf("Updated:   %s\n", issue.Updated.Format("2006-01-02 15:04")))
+		field("Updated", issue.Updated.Format("2006-01-02 15:04"))
 	}
 
 	// Labels
 	if len(issue.Labels) > 0 {
-		sb.WriteString(fmt.Sprintf("Labels:    %s\n", strings.Join(issue.Labels, ", ")))
+		field("Labels", strings.Join(issue.Labels, ", "))
 	}
 
-	// Sprint
-	if issue.Sprint != "" {
-		sb.WriteString(fmt.Sprintf("Sprint:    %s\n", issue.Sprint))
-	}
-
-	sb.WriteString("\n")
-
-	// Description
+	// ── Description ───────────────────────────────────────────────────────────
 	if issue.Description != "" {
-		sb.WriteString("Description:\n")
+		sb.WriteString("\n— Description —\n")
 		sb.WriteString(wordWrap(issue.Description, width) + "\n")
 	}
 
-	// Comments
-	for _, c := range issue.Comments {
-		sb.WriteString("\n")
-		// Comment header: ── Author · Date ───
-		author := c.Author.DisplayName
-		date := c.Created.Format("2006-01-02 15:04")
-		header := fmt.Sprintf("── %s · %s ───", author, date)
-		sb.WriteString(header + "\n")
-		sb.WriteString(wordWrap(c.Body, width) + "\n")
+	// ── Comments ──────────────────────────────────────────────────────────────
+	if len(issue.Comments) > 0 {
+		sb.WriteString(fmt.Sprintf("\n— Comments (%d) —\n", len(issue.Comments)))
+		for _, c := range issue.Comments {
+			author := c.Author.DisplayName
+			date := c.Created.Format("2006-01-02 15:04")
+			sb.WriteString(fmt.Sprintf("\n[%s · %s]\n", author, date))
+			sb.WriteString(wordWrap(c.Body, width) + "\n")
+		}
 	}
 
 	return sb.String()

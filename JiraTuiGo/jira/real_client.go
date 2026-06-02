@@ -41,10 +41,58 @@ func dbg(format string, args ...any) {
 // Dbg is the exported version for use by other packages.
 func Dbg(format string, args ...any) { dbg(format, args...) }
 
+// parseSprint extracts the sprint name from the raw sprint field.
+// Jira returns it as a single object {"name":"Sprint 9",...} or an array.
+// We prefer the active sprint, then future, then the last entry.
+func parseSprint(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+
+	type sprintObj struct {
+		Name  string `json:"name"`
+		State string `json:"state"`
+	}
+
+	// Try array form first.
+	var arr []sprintObj
+	if json.Unmarshal(raw, &arr) == nil && len(arr) > 0 {
+		var active, future *sprintObj
+		for i := range arr {
+			switch strings.ToLower(arr[i].State) {
+			case "active":
+				if active == nil {
+					active = &arr[i]
+				}
+			case "future":
+				if future == nil {
+					future = &arr[i]
+				}
+			}
+		}
+		pick := active
+		if pick == nil {
+			pick = future
+		}
+		if pick == nil {
+			pick = &arr[len(arr)-1]
+		}
+		return pick.Name
+	}
+
+	// Try single-object form.
+	var obj sprintObj
+	if json.Unmarshal(raw, &obj) == nil && obj.Name != "" {
+		return obj.Name
+	}
+	return ""
+}
+
 type RealClient struct {
-	baseURL    string
-	authHeader string
-	http       *http.Client
+	baseURL       string
+	authHeader    string
+	http          *http.Client
+	sprintFieldID string // cached once we find it among customfield_* keys
 }
 
 func NewRealClient(baseURL, email, token string) *RealClient {
@@ -149,9 +197,9 @@ type searchResponse struct {
 }
 
 type rawIssue struct {
-	ID     string    `json:"id"`
-	Key    string    `json:"key"`
-	Fields rawFields `json:"fields"`
+	ID     string          `json:"id"`
+	Key    string          `json:"key"`
+	Fields json.RawMessage `json:"fields"` // kept raw so we can scan customfield_* for sprint
 }
 
 // jiraTime handles Jira Cloud's date format "2006-01-02T15:04:05.000+0000"
@@ -233,7 +281,7 @@ func (c *RealClient) SearchIssues(jql string, maxResults int) ([]Issue, int, err
 		if err == nil {
 			issues := make([]Issue, len(result.Issues))
 			for i, ri := range result.Issues {
-				issues[i] = convertIssue(ri)
+				issues[i] = c.convertIssue(ri)
 			}
 			dbg("SearchIssues %s → %d issues", path, len(issues))
 			return issues, result.Total, nil
@@ -248,8 +296,10 @@ func (c *RealClient) SearchIssues(jql string, maxResults int) ([]Issue, int, err
 	return nil, 0, lastErr
 }
 
-func convertIssue(ri rawIssue) Issue {
-	f := ri.Fields
+func (c *RealClient) convertIssue(ri rawIssue) Issue {
+	var f rawFields
+	_ = json.Unmarshal(ri.Fields, &f)
+
 	issue := Issue{
 		ID:      ri.ID,
 		Key:     ri.Key,
@@ -259,7 +309,7 @@ func convertIssue(ri rawIssue) Issue {
 		Updated: f.Updated.Time,
 	}
 	if f.Description != nil {
-		issue.Description = string(f.Description)
+		issue.Description = RenderADF(string(f.Description))
 	}
 	if f.Priority != nil {
 		issue.Priority = *f.Priority
@@ -275,12 +325,17 @@ func convertIssue(ri rawIssue) Issue {
 	}
 	issue.Assignee = f.Assignee
 	issue.Reporter = f.Reporter
+
+	// Sprint lives in a customfield_* key that varies between Jira instances.
+	// Scan all keys the first time, then use the cached ID — same approach as C#.
+	issue.Sprint = c.extractSprint(ri.Fields)
+
 	if f.Comment != nil {
 		for _, rc := range f.Comment.Comments {
 			issue.Comments = append(issue.Comments, Comment{
 				ID:      rc.ID,
 				Author:  rc.Author,
-				Body:    string(rc.Body),
+				Body:    RenderADF(string(rc.Body)),
 				Created: rc.Created.Time,
 				Updated: rc.Updated.Time,
 			})
@@ -289,12 +344,60 @@ func convertIssue(ri rawIssue) Issue {
 	return issue
 }
 
+// extractSprint scans all customfield_* keys for an array (or object) that
+// looks like a Jira sprint, caches the field ID, and returns the sprint name.
+func (c *RealClient) extractSprint(fieldsRaw json.RawMessage) string {
+	var allFields map[string]json.RawMessage
+	if err := json.Unmarshal(fieldsRaw, &allFields); err != nil {
+		return ""
+	}
+
+	// Fast path: use cached field ID.
+	if c.sprintFieldID != "" {
+		if raw, ok := allFields[c.sprintFieldID]; ok {
+			if name := parseSprint(raw); name != "" {
+				return name
+			}
+		}
+	}
+
+	// Slow path: scan all customfield_* keys.
+	for key, raw := range allFields {
+		if !strings.HasPrefix(key, "customfield_") {
+			continue
+		}
+		name := parseSprint(raw)
+		if name == "" {
+			continue
+		}
+		// Verify it looks like a sprint object (has state or boardId).
+		type sprintCheck struct {
+			State   string `json:"state"`
+			BoardID any    `json:"boardId"`
+		}
+		var arr []sprintCheck
+		var obj sprintCheck
+		if json.Unmarshal(raw, &arr) == nil && len(arr) > 0 {
+			if arr[0].State != "" || arr[0].BoardID != nil {
+				c.sprintFieldID = key
+				return name
+			}
+		} else if json.Unmarshal(raw, &obj) == nil {
+			if obj.State != "" || obj.BoardID != nil {
+				c.sprintFieldID = key
+				return name
+			}
+		}
+	}
+	return ""
+}
+
 func (c *RealClient) GetIssue(key string) (*Issue, error) {
 	var ri rawIssue
 	if err := c.get("/rest/api/3/issue/"+key+"?fields=*all", &ri); err != nil {
 		return nil, err
 	}
-	issue := convertIssue(ri)
+	issue := c.convertIssue(ri)
 	return &issue, nil
 }
 

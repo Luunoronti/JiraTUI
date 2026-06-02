@@ -125,8 +125,13 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 			app.toggleJql()
 			return nil
 		case tcell.KeyCtrlL:
-			// Legend is always available.
 			app.showLegend()
+			return nil
+		case tcell.KeyCtrlR:
+			app.loadIssues(app.currentJql)
+			return nil
+		case tcell.KeyCtrlBackslash:
+			app.showColumns()
 			return nil
 		case tcell.KeyEnter:
 			// Enter opens fullscreen detail when issue list has focus and
@@ -571,6 +576,26 @@ func (app *App) showLegend() {
 		app.modalOpen--
 		app.restoreFocus()
 	})
+}
+
+func (app *App) showColumns() {
+	app.modalOpen++
+	dialogs.ShowColumnsDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		app.cfg.Columns,
+		func(cols config.ColumnVisibilityConfig) {
+			app.modalOpen--
+			app.cfg.Columns = cols
+			_ = app.cfg.Save()
+			app.issueList.SetColumns(cols)
+			app.restoreFocus()
+		},
+		func() {
+			app.modalOpen--
+			app.restoreFocus()
+		},
+	)
 }
 
 // ─── settings ─────────────────────────────────────────────────────────────────

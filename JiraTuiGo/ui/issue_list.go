@@ -58,6 +58,11 @@ func (il *IssueList) SetIssues(issues []jira.Issue) {
 	}
 }
 
+// SetColumns updates column visibility; takes effect on next Draw.
+func (il *IssueList) SetColumns(cols config.ColumnVisibilityConfig) {
+	il.columns = cols
+}
+
 func (il *IssueList) SetOnSelect(fn func(jira.Issue)) {
 	il.onSelect = fn
 }
