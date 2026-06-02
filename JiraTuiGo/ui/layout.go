@@ -1,6 +1,9 @@
 package ui
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Tier int
 
@@ -51,41 +54,58 @@ func DetailWidth(tier Tier, termWidth int) int {
 	}
 }
 
+// Hint holds a status bar entry in one of two formats:
+//   "(X)rest"   — Ctrl shortcut; X is the key letter, rest is the label
+//   "KEY:Word"  — e.g. "F2:Settings"; KEY is highlighted, Word is the label
 type Hint struct {
-	Key    string
 	Action string
 }
 
-func StatusBarHints(width int, hints []Hint) string {
+// StatusBarHints builds the formatted hints string for the given terminal
+// width. keyOpen/keyClose are tview dynamic-colour tags that bracket the
+// shortcut key character, e.g. "[aqua]" and "[-]".
+func StatusBarHints(width int, hints []Hint, keyOpen, keyClose string) string {
+	format := func(h Hint, full bool) string {
+		a := h.Action
+		// "(X)rest" format
+		if len(a) >= 3 && a[0] == '(' {
+			end := strings.Index(a[1:], ")") + 1
+			if end > 0 {
+				key := a[1:end]
+				rest := a[end+1:]
+				if full {
+					return "(" + keyOpen + key + keyClose + ")" + rest
+				}
+				return "(" + keyOpen + key + keyClose + ")"
+			}
+		}
+		// "KEY:Word" format
+		if colon := strings.Index(a, ":"); colon > 0 {
+			k, r := a[:colon], a[colon+1:]
+			if full {
+				return keyOpen + k + keyClose + ":" + r
+			}
+			return keyOpen + k + keyClose
+		}
+		return a
+	}
+
+	sep := "  "
 	if width >= 80 {
 		var parts []string
 		for _, h := range hints {
-			parts = append(parts, fmt.Sprintf("%s:%s", h.Key, h.Action))
+			parts = append(parts, format(h, true))
 		}
-		result := ""
-		for i, p := range parts {
-			if i > 0 {
-				result += "  "
-			}
-			result += p
-		}
-		return result
+		return strings.Join(parts, sep)
 	}
 	if width >= 60 {
 		var parts []string
 		for _, h := range hints {
-			parts = append(parts, h.Key)
+			parts = append(parts, format(h, false))
 		}
-		result := ""
-		for i, p := range parts {
-			if i > 0 {
-				result += "  "
-			}
-			result += p
-		}
-		return result
+		return strings.Join(parts, sep)
 	}
-	return "Ctrl-Q:Quit"
+	return "(" + keyOpen + "Q" + keyClose + ")uit"
 }
 
 func TooSmallMsg(width, height int) string {

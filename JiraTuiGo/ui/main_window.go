@@ -192,16 +192,21 @@ func (mw *mainWindow) build() {
 }
 
 func (mw *mainWindow) updateStatusBar(width int) {
+	// Build tview colour tags for the shortcut key letter from the theme.
+	t := themes.Current()
+	keyOpen := "[" + themes.C(t.StatusKeyFg).String() + "]"
+	keyClose := "[-]"
+
 	allHints := []Hint{
-		{"F2", "Settings"},
-		{"Ctrl-R", "Refresh"},
-		{"Ctrl-B", "Nav"},
-		{"Ctrl-D", "Detail"},
-		{"Ctrl-J", "JQL"},
-		{"Ctrl-\\", "Columns"},
-		{"Ctrl-G", "AI"},
-		{"Ctrl-L", "Legend"},
-		{"Ctrl-Q", "Quit"},
+		{"F2:Settings"},
+		{"(R)efresh"},
+		{"(B)Nav"},
+		{"(D)etail"},
+		{"(J)QL"},
+		{"(\\)Cols"},
+		{"(G)AI"},
+		{"(L)egend"},
+		{"(Q)uit"},
 	}
 
 	issueCount := ""
@@ -218,7 +223,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 		}
 	}
 
-	hints := StatusBarHints(width, allHints)
+	hints := StatusBarHints(width, allHints, keyOpen, keyClose)
 	meta := issueCount + updateIndicator
 	singleLine := " " + hints + meta
 
