@@ -106,20 +106,30 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 	app.loadIssues(cfg.Behavior.DefaultJql)
 
 	// Auto-show What's New on first launch after version change.
-	// Uses SetAfterDrawFunc so the dialog opens only after the event loop has
-	// started — QueueUpdateDraw called before Run() sends to an uninitialised
-	// channel and blocks forever.
+	//
+	// Why this three-step dance:
+	//   1. QueueUpdateDraw() before Run() → sends on nil channel → hangs.
+	//   2. SetAfterDrawFunc() → runs inside the draw lock; calling pages.AddPage()
+	//      or SetFocus() from it tries to re-acquire the same lock → deadlocks.
+	//   3. Solution: AfterDrawFunc signals a channel, a goroutine outside the lock
+	//      calls QueueUpdateDraw safely once Run() is known to be running.
 	if version != "dev" && version != cfg.Behavior.LastSeenVersion {
 		cfg.Behavior.LastSeenVersion = version
 		_ = cfg.Save()
-		shown := false
+		ready := make(chan struct{}, 1)
 		tapp.SetAfterDrawFunc(func(_ tcell.Screen) {
-			if !shown {
-				shown = true
-				tapp.SetAfterDrawFunc(nil) // remove hook before opening dialog
-				app.showWhatsNew()
+			select {
+			case ready <- struct{}{}: // signal once; goroutine drains it
+			default:
 			}
 		})
+		go func() {
+			<-ready
+			tapp.SetAfterDrawFunc(nil)
+			tapp.QueueUpdateDraw(func() {
+				app.showWhatsNew()
+			})
+		}()
 	}
 
 	// Load nav data in background so the UI is immediately responsive.
