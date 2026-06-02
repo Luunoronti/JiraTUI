@@ -9,13 +9,15 @@ import (
 )
 
 type mainWindow struct {
-	pages      *tview.Pages
-	issueList  *IssueList
-	nav        *NavPanel
-	statusBar  *tview.TextView
-	menuBar    *tview.TextView
-	app        *tview.Application
-	currentJql string
+	pages        *tview.Pages
+	issueList    *IssueList
+	nav          *NavPanel
+	detailPanel  *DetailPanel
+	detailFull   *DetailFullView
+	statusBar    *tview.TextView
+	menuBar      *tview.TextView
+	app          *tview.Application
+	currentJql   string
 
 	// onNavClose is called when the too-small transition hides the nav page,
 	// so the App can sync its navVisible flag without queuing extra draws.
@@ -24,10 +26,12 @@ type mainWindow struct {
 
 func newMainWindow(app *tview.Application, il *IssueList, nav *NavPanel) *mainWindow {
 	mw := &mainWindow{
-		pages:     tview.NewPages(),
-		app:       app,
-		issueList: il,
-		nav:       nav,
+		pages:       tview.NewPages(),
+		app:         app,
+		issueList:   il,
+		nav:         nav,
+		detailPanel: NewDetailPanel(),
+		detailFull:  NewDetailFullView(),
 	}
 	mw.build()
 	return mw
@@ -39,6 +43,22 @@ func (mw *mainWindow) showNav() {
 
 func (mw *mainWindow) hideNav() {
 	mw.pages.HidePage("nav")
+}
+
+func (mw *mainWindow) showDetailSide() {
+	mw.pages.ShowPage("detail")
+}
+
+func (mw *mainWindow) hideDetailSide() {
+	mw.pages.HidePage("detail")
+}
+
+func (mw *mainWindow) showDetailFull() {
+	mw.pages.ShowPage("detail-full")
+}
+
+func (mw *mainWindow) hideDetailFull() {
+	mw.pages.HidePage("detail-full")
 }
 
 func (mw *mainWindow) build() {
@@ -83,6 +103,10 @@ func (mw *mainWindow) build() {
 	mw.pages.AddPage("toosmall", tooSmall, true, false)
 	// nav page: resize=false (panel manages its own rect), initially hidden.
 	mw.pages.AddPage("nav", mw.nav, false, false)
+	// detail side panel: resize=false (panel manages its own rect), initially hidden.
+	mw.pages.AddPage("detail", mw.detailPanel, false, false)
+	// detail fullscreen: resize=true (occupies full terminal), initially hidden.
+	mw.pages.AddPage("detail-full", mw.detailFull, true, false)
 
 	// Guard state — calling SetText / SwitchToPage / ShowPage / HidePage inside
 	// BeforeDrawFunc triggers SetNeedsDisplay, which queues another draw →
@@ -103,6 +127,8 @@ func (mw *mainWindow) build() {
 				wasTooSmall = true
 				mw.pages.HidePage("main")
 				mw.pages.HidePage("nav")
+				mw.pages.HidePage("detail")
+				mw.pages.HidePage("detail-full")
 				mw.pages.ShowPage("toosmall")
 				// Notify app to reset navVisible flag (no tview calls here).
 				if mw.onNavClose != nil {

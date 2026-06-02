@@ -19,11 +19,12 @@ type columnDef struct {
 
 type IssueList struct {
 	*tview.Box
-	issues   []jira.Issue
-	selected int
-	columns  config.ColumnVisibilityConfig
-	app      *tview.Application
-	onSelect func(issue jira.Issue)
+	issues            []jira.Issue
+	selected          int
+	columns           config.ColumnVisibilityConfig
+	app               *tview.Application
+	onSelect          func(issue jira.Issue)
+	OnSelectionChange func(issue jira.Issue)
 }
 
 func NewIssueList(app *tview.Application, cols config.ColumnVisibilityConfig) *IssueList {
@@ -42,6 +43,10 @@ func (il *IssueList) SetIssues(issues []jira.Issue) {
 	}
 	if il.selected < 0 {
 		il.selected = 0
+	}
+	// Notify detail panel of the new selection (first issue after load).
+	if il.OnSelectionChange != nil && len(issues) > 0 {
+		il.OnSelectionChange(il.issues[il.selected])
 	}
 }
 
@@ -297,6 +302,9 @@ func (il *IssueList) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 				if il.onSelect != nil && len(il.issues) > 0 {
 					il.onSelect(il.issues[il.selected])
 				}
+				if il.OnSelectionChange != nil && len(il.issues) > 0 {
+					il.OnSelectionChange(il.issues[il.selected])
+				}
 			}
 		case tcell.KeyDown:
 			if il.selected < len(il.issues)-1 {
@@ -304,6 +312,16 @@ func (il *IssueList) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 				if il.onSelect != nil && len(il.issues) > 0 {
 					il.onSelect(il.issues[il.selected])
 				}
+				if il.OnSelectionChange != nil && len(il.issues) > 0 {
+					il.OnSelectionChange(il.issues[il.selected])
+				}
+			}
+		case tcell.KeyEnter:
+			// Enter is handled by the app via the global key handler;
+			// we fire OnSelectionChange so the fullscreen detail can be
+			// populated before the page switch.
+			if il.OnSelectionChange != nil && len(il.issues) > 0 {
+				il.OnSelectionChange(il.issues[il.selected])
 			}
 		}
 	})
