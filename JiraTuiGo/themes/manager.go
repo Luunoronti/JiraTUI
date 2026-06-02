@@ -42,11 +42,35 @@ func Detect() {
 		return
 	}
 	term := strings.ToLower(os.Getenv("TERM"))
+	if strings.Contains(term, "truecolor") {
+		currentTier = TierTrueColor
+		return
+	}
 	if strings.Contains(term, "256color") {
 		currentTier = Tier256
 		return
 	}
-	currentTier = TierTrueColor // Windows Terminal always supports true color
+	currentTier = TierTrueColor // Windows Terminal default; overridden by DetectFromScreen
+}
+
+// DetectFromScreen refines the tier using tcell's own capability detection,
+// which checks COLORTERM, terminfo Tc/RGB caps, and TERM_PROGRAM.
+// Returns true if the tier changed (caller should re-apply the current theme).
+func DetectFromScreen(colors int) bool {
+	var t ColorTier
+	switch {
+	case colors >= 1<<24:
+		t = TierTrueColor
+	case colors >= 256:
+		t = Tier256
+	default:
+		t = Tier16
+	}
+	if t == currentTier {
+		return false
+	}
+	currentTier = t
+	return true
 }
 
 func pickColor(tc ThemeColor) tcell.Color {

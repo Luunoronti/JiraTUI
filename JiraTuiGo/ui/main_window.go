@@ -126,8 +126,21 @@ func (mw *mainWindow) build() {
 	lastWidth := -1
 	wasTooSmall := false
 	lastMsg := ""
+	colorDetected := false
 
 	mw.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		// On the first draw, tcell's screen has been fully initialised and
+		// screen.Colors() reflects the real terminal capability (it checks
+		// COLORTERM, terminfo Tc/RGB, TERM_PROGRAM, etc.).  Override our
+		// env-var pre-detection with tcell's authoritative answer.
+		if !colorDetected {
+			colorDetected = true
+			if themes.DetectFromScreen(screen.Colors()) {
+				themes.Apply(themes.Current())
+				mw.refreshColors()
+			}
+		}
+
 		w, h := screen.Size()
 		if TooSmall(w, h) {
 			msg := TooSmallMsg(w, h)
@@ -183,6 +196,18 @@ func (mw *mainWindow) updateStatusBar(width int) {
 	}
 
 	mw.statusBar.SetText(" " + text + issueCount)
+}
+
+// refreshColors re-applies theme colors to tview-managed primitives (menu bar,
+// status bar) after the color tier is updated from screen.Colors() on first draw.
+// Custom primitives (IssueList, NavPanel, …) read themes.C() in their own
+// Draw() calls so they update automatically without this.
+func (mw *mainWindow) refreshColors() {
+	t := themes.Current()
+	mw.menuBar.SetBackgroundColor(themes.C(t.Background))
+	mw.menuBar.SetTextColor(themes.C(t.TextNormal))
+	mw.statusBar.SetBackgroundColor(themes.C(t.StatusBg))
+	mw.statusBar.SetTextColor(themes.C(t.StatusFg))
 }
 
 func (mw *mainWindow) Primitive() tview.Primitive {
