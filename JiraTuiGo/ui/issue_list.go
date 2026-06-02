@@ -172,67 +172,21 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 	}
 	t := themes.Current()
 
-	if w < MinWidth || h < 3 {
+	if w < MinWidth || h < 2 {
 		tview.Print(screen, TooSmallMsg(w, h), x, y, w, tview.AlignLeft, themes.C(t.TextNormal))
 		return
 	}
 
 	if il.errorMsg != "" {
-		tview.Print(screen, " Error: "+il.errorMsg, x, y+1, w, tview.AlignLeft, themes.C(t.PriHighest))
+		tview.Print(screen, " Error: "+il.errorMsg, x, y, w, tview.AlignLeft, themes.C(t.PriHighest))
 		return
 	}
 
 	cols := il.computeColumns(w)
 
-	// Header row
-	headerBg := themes.C(t.ListHeaderBg)
-	headerFg := themes.C(t.ListHeaderFg)
-	drawRow(screen, x, y, w, cols, func(col columnDef) (string, tcell.Color, tcell.Color) {
-		var text string
-		switch col.id {
-		case "key":
-			text = "Key"
-		case "type":
-			text = "T"
-		case "priority":
-			text = "P"
-		case "status":
-			text = "S"
-		case "assignee":
-			text = "Assignee"
-		case "summary":
-			text = "Summary"
-		}
-		return pad(text, col.width), headerFg, headerBg
-	})
-
-	// "JiraTUI" title right-aligned in the header row.
-	{
-		title := []rune(" JiraTUI ")
-		titleX := x + w - len(title)
-		if titleX > x {
-			titleStyle := tcell.StyleDefault.
-				Foreground(themes.C(t.TextEmphasis)).
-				Background(headerBg)
-			for j, r := range title {
-				if titleX+j >= x+w {
-					break
-				}
-				screen.SetContent(titleX+j, y, r, nil, titleStyle)
-			}
-		}
-	}
-
-	// Separator
-	sepY := y + 1
-	for i := 0; i < w; i++ {
-		screen.SetContent(x+i, sepY, '─', nil, tcell.StyleDefault.
-			Foreground(themes.C(t.Border)).Background(themes.C(t.ListBg)))
-	}
-
-	// Issue rows
-	rowY := y + 2
-	maxRows := h - 2
+	// Issue rows start immediately — no header, no separator.
+	rowY := y
+	maxRows := h
 	if len(il.issues) == 0 {
 		tview.Print(screen, " No issues found.", x, rowY, w, tview.AlignLeft, themes.C(t.TextMuted))
 		return

@@ -213,7 +213,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 	}
 
 	hints := StatusBarHints(width, allHints, keyOpen, keyClose)
-	mw.statusBar.SetText(" " + hints + issueCount + updateIndicator)
+	mw.statusBar.SetText(" " + hints + issueCount + updateIndicator + "  | JiraTUI")
 }
 
 // SetUpdateAvailable sets the update indicator string and refreshes the status bar.
