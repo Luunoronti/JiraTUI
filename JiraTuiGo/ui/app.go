@@ -106,11 +106,19 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 	app.loadIssues(cfg.Behavior.DefaultJql)
 
 	// Auto-show What's New on first launch after version change.
+	// Uses SetAfterDrawFunc so the dialog opens only after the event loop has
+	// started — QueueUpdateDraw called before Run() sends to an uninitialised
+	// channel and blocks forever.
 	if version != "dev" && version != cfg.Behavior.LastSeenVersion {
 		cfg.Behavior.LastSeenVersion = version
 		_ = cfg.Save()
-		tapp.QueueUpdateDraw(func() {
-			app.showWhatsNew()
+		shown := false
+		tapp.SetAfterDrawFunc(func(_ tcell.Screen) {
+			if !shown {
+				shown = true
+				tapp.SetAfterDrawFunc(nil) // remove hook before opening dialog
+				app.showWhatsNew()
+			}
 		})
 	}
 
