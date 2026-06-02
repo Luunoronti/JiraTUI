@@ -9,20 +9,17 @@ import (
 )
 
 type mainWindow struct {
-	pages          *tview.Pages
-	mainFlex       *tview.Flex // kept so we can resize the status bar dynamically
-	issueList      *IssueList
-	nav            *NavPanel
-	detailPanel    *DetailPanel
-	detailFull     *DetailFullView
-	jqlBar         *JqlBar
-	statusBar      *tview.TextView // always in mainFlex (1 row)
-	statusBar2     *tview.TextView // second row — inserted/removed as needed
-	menuBar        *tview.TextView
-	app            *tview.Application
-	currentJql     string
-	updateVersion  string // "" = none; "v0.2.1" = update available; "restart" = restart needed
-	statusBarRows  int    // 1 or 2 — tracks what's currently in mainFlex
+	pages         *tview.Pages
+	issueList     *IssueList
+	nav           *NavPanel
+	detailPanel   *DetailPanel
+	detailFull    *DetailFullView
+	jqlBar        *JqlBar
+	statusBar     *tview.TextView
+	menuBar       *tview.TextView
+	app           *tview.Application
+	currentJql    string
+	updateVersion string // "" = none; "v0.2.1" = update available; "restart" = restart needed
 
 	// onNavClose is called when the too-small transition hides the nav page,
 	// so the App can sync its navVisible flag without queuing extra draws.
@@ -93,28 +90,20 @@ func (mw *mainWindow) build() {
 	_ = menuText
 	mw.menuBar.SetText(" JiraTUI")
 
-	// Status bar — always 1 row; a second row (statusBar2) is inserted into
-	// mainFlex dynamically when the hints overflow the terminal width.
-	newStatusTV := func() *tview.TextView {
-		tv := tview.NewTextView()
-		tv.SetDynamicColors(true)
-		tv.SetScrollable(false)
-		tv.SetWrap(false)
-		tv.SetBackgroundColor(statusBg)
-		tv.SetTextColor(statusFg)
-		return tv
-	}
-	mw.statusBar = newStatusTV()
-	mw.statusBar2 = newStatusTV()
-	mw.statusBarRows = 1
+	// Status bar — single row.
+	mw.statusBar = tview.NewTextView()
+	mw.statusBar.SetDynamicColors(true)
+	mw.statusBar.SetScrollable(false)
+	mw.statusBar.SetWrap(false)
+	mw.statusBar.SetBackgroundColor(statusBg)
+	mw.statusBar.SetTextColor(statusFg)
 	mw.updateStatusBar(120)
 
 	// Main flex layout — no separate menu bar row; "JiraTUI" title is drawn
 	// right-aligned inside the issue list header row (saves one screen row).
-	mw.mainFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+	mainFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(mw.issueList, 0, 1, true).
 		AddItem(mw.statusBar, 1, 0, false)
-	mainFlex := mw.mainFlex
 
 	// Too small view
 	tooSmall := tview.NewTextView()
@@ -224,28 +213,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 	}
 
 	hints := StatusBarHints(width, allHints, keyOpen, keyClose)
-	meta := issueCount + updateIndicator
-	singleLine := " " + hints + meta
-
-	if len([]rune(singleLine)) <= width {
-		// Single-line mode: remove second row if it was present.
-		if mw.statusBarRows == 2 && mw.mainFlex != nil {
-			mw.statusBarRows = 1
-			mw.mainFlex.RemoveItem(mw.statusBar2)
-		}
-		mw.statusBar.SetText(singleLine)
-		return
-	}
-
-	// Two-line mode: insert statusBar2 above statusBar if not already there.
-	if mw.statusBarRows == 1 && mw.mainFlex != nil {
-		mw.statusBarRows = 2
-		mw.mainFlex.RemoveItem(mw.statusBar)
-		mw.mainFlex.AddItem(mw.statusBar2, 1, 0, false)
-		mw.mainFlex.AddItem(mw.statusBar, 1, 0, false)
-	}
-	mw.statusBar2.SetText(" " + hints)
-	mw.statusBar.SetText(" " + meta)
+	mw.statusBar.SetText(" " + hints + issueCount + updateIndicator)
 }
 
 // SetUpdateAvailable sets the update indicator string and refreshes the status bar.
@@ -269,8 +237,7 @@ func (mw *mainWindow) refreshColors() {
 	mw.menuBar.SetTextColor(themes.C(t.TextNormal))
 	mw.statusBar.SetBackgroundColor(themes.C(t.StatusBg))
 	mw.statusBar.SetTextColor(themes.C(t.StatusFg))
-	mw.statusBar2.SetBackgroundColor(themes.C(t.StatusBg))
-	mw.statusBar2.SetTextColor(themes.C(t.StatusFg))
+
 }
 
 func (mw *mainWindow) Primitive() tview.Primitive {
