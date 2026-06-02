@@ -156,7 +156,9 @@ func (app *App) openDetailSide() {
 	app.mainWindow.detailPanel.SetIssue(app.currentIssue, panelW)
 	app.detailVisible = true
 	app.mainWindow.showDetailSide()
-	// Side panel does NOT steal focus — issue list keeps focus.
+	// ShowPage can transfer focus to the new visible page — explicitly keep
+	// focus on the issue list so the side panel remains passive.
+	app.tapp.SetFocus(app.issueList)
 }
 
 func (app *App) closeDetail() {

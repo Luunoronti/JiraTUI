@@ -129,6 +129,8 @@ func NewDetailPanel() *DetailPanel {
 		Box:      tview.NewBox(),
 		textView: tview.NewTextView(),
 	}
+	dp.Box.SetBorder(true)
+	dp.Box.SetTitle(" Detail ")
 	dp.textView.SetDynamicColors(false)
 	dp.textView.SetScrollable(true)
 	dp.textView.SetWrap(true)
@@ -179,8 +181,6 @@ func (dp *DetailPanel) Draw(screen tcell.Screen) {
 
 	// Self-position: anchored top-right.
 	dp.Box.SetRect(panelX, panelY, panelW, panelH)
-	dp.Box.SetBorder(true)
-	dp.Box.SetTitle(" Detail ")
 
 	dp.Box.DrawForSubclass(screen, dp)
 
@@ -200,8 +200,12 @@ func (dp *DetailPanel) Draw(screen tcell.Screen) {
 	style := tcell.StyleDefault.Foreground(fg).Background(bg)
 
 	lines := strings.Split(dp.content, "\n")
-	// Simple scroll offset from the textView's row offset.
+	// Clamp rowOff — textView.lineOffset can go negative if the panel briefly
+	// receives a key event before focus is explicitly restored to the list.
 	rowOff, _ := dp.textView.GetScrollOffset()
+	if rowOff < 0 {
+		rowOff = 0
+	}
 
 	for row := 0; row < innerH; row++ {
 		lineIdx := rowOff + row
