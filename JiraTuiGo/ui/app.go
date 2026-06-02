@@ -37,9 +37,10 @@ type App struct {
 	currentIssue     *jira.Issue
 	modalOpen        int // >0 when a dialog is on screen
 	issueMeta        *config.IssueMetaStore
+	changelog        string
 }
 
-func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName string) error {
+func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName, changelog string) error {
 	tapp := tview.NewApplication()
 
 	history := config.NewJqlHistory()
@@ -67,6 +68,7 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 		repoName:   repoName,
 		currentJql: cfg.Behavior.DefaultJql,
 		issueMeta:  meta,
+		changelog:  changelog,
 	}
 
 	// When the terminal goes too-small the BeforeDrawFunc hides overlays;
@@ -103,6 +105,15 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 	jqlBar.SetText(cfg.Behavior.DefaultJql)
 	app.loadIssues(cfg.Behavior.DefaultJql)
 
+	// Auto-show What's New on first launch after version change.
+	if version != "dev" && version != cfg.Behavior.LastSeenVersion {
+		cfg.Behavior.LastSeenVersion = version
+		_ = cfg.Save()
+		tapp.QueueUpdateDraw(func() {
+			app.showWhatsNew()
+		})
+	}
+
 	// Load nav data in background so the UI is immediately responsive.
 	go func() {
 		projects, _ := client.GetProjects()
@@ -133,6 +144,12 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 
 	// Global key handler.
 	tapp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// F1 — What's New, always available when no other modal is open.
+		if event.Key() == tcell.KeyF1 && app.modalOpen == 0 {
+			app.showWhatsNew()
+			return nil
+		}
+
 		// F2 is always available — even when another modal is open we allow
 		// re-opening settings (guard is handled inside openSettings via modalOpen).
 		if event.Key() == tcell.KeyF2 && app.modalOpen == 0 {
@@ -651,6 +668,21 @@ func (app *App) showColumns() {
 			app.issueList.SetColumns(cols)
 			app.restoreFocus()
 		},
+		func() {
+			app.modalOpen--
+			app.restoreFocus()
+		},
+	)
+}
+
+// ─── what's new ───────────────────────────────────────────────────────────────
+
+func (app *App) showWhatsNew() {
+	app.modalOpen++
+	dialogs.ShowWhatsNewDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		app.changelog,
 		func() {
 			app.modalOpen--
 			app.restoreFocus()

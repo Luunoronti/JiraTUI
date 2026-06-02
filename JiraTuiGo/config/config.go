@@ -24,6 +24,7 @@ type BehaviorConfig struct {
 	PageSize           int       `json:"pageSize"`
 	AutoRefreshSeconds int       `json:"autoRefreshSeconds"`
 	LastUpdateCheck    time.Time `json:"lastUpdateCheck,omitempty"`
+	LastSeenVersion    string    `json:"lastSeenVersion,omitempty"`
 }
 
 type AiConfig struct {

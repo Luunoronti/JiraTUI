@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,9 @@ import (
 	"jiratui/themes"
 	"jiratui/ui"
 )
+
+//go:embed CHANGELOG.md
+var changelog string
 
 var (
 	version   = "dev"
@@ -47,7 +51,7 @@ func main() {
 		client = jira.NewRealClient(cfg.Conn.BaseURL, cfg.Conn.Email, config.Unprotect(cfg.Conn.TokenProtected))
 	}
 
-	if err := ui.Run(cfg, client, version, repoOwner, repoName); err != nil {
+	if err := ui.Run(cfg, client, version, repoOwner, repoName, changelog); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

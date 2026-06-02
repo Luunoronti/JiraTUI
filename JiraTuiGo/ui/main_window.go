@@ -187,6 +187,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 	keyClose := "[-]"
 
 	allHints := []Hint{
+		{"F1:What's New"},
 		{"F2:Settings"},
 		{"(R)efresh"},
 		{"(B)Nav"},
