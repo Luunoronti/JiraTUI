@@ -14,6 +14,7 @@ type mainWindow struct {
 	nav          *NavPanel
 	detailPanel  *DetailPanel
 	detailFull   *DetailFullView
+	jqlBar       *JqlBar
 	statusBar    *tview.TextView
 	menuBar      *tview.TextView
 	app          *tview.Application
@@ -24,7 +25,7 @@ type mainWindow struct {
 	onNavClose func()
 }
 
-func newMainWindow(app *tview.Application, il *IssueList, nav *NavPanel) *mainWindow {
+func newMainWindow(app *tview.Application, il *IssueList, nav *NavPanel, jqlBar *JqlBar) *mainWindow {
 	mw := &mainWindow{
 		pages:       tview.NewPages(),
 		app:         app,
@@ -32,6 +33,7 @@ func newMainWindow(app *tview.Application, il *IssueList, nav *NavPanel) *mainWi
 		nav:         nav,
 		detailPanel: NewDetailPanel(),
 		detailFull:  NewDetailFullView(),
+		jqlBar:      jqlBar,
 	}
 	mw.build()
 	return mw
@@ -59,6 +61,14 @@ func (mw *mainWindow) showDetailFull() {
 
 func (mw *mainWindow) hideDetailFull() {
 	mw.pages.HidePage("detail-full")
+}
+
+func (mw *mainWindow) showJql() {
+	mw.pages.ShowPage("jql")
+}
+
+func (mw *mainWindow) hideJql() {
+	mw.pages.HidePage("jql")
 }
 
 func (mw *mainWindow) build() {
@@ -107,6 +117,8 @@ func (mw *mainWindow) build() {
 	mw.pages.AddPage("detail", mw.detailPanel, false, false)
 	// detail fullscreen: resize=true (occupies full terminal), initially hidden.
 	mw.pages.AddPage("detail-full", mw.detailFull, true, false)
+	// JQL bar: resize=false (self-positions at bottom in Draw), initially hidden.
+	mw.pages.AddPage("jql", mw.jqlBar, false, false)
 
 	// Guard state — calling SetText / SwitchToPage / ShowPage / HidePage inside
 	// BeforeDrawFunc triggers SetNeedsDisplay, which queues another draw →
@@ -129,6 +141,7 @@ func (mw *mainWindow) build() {
 				mw.pages.HidePage("nav")
 				mw.pages.HidePage("detail")
 				mw.pages.HidePage("detail-full")
+				mw.pages.HidePage("jql")
 				mw.pages.ShowPage("toosmall")
 				// Notify app to reset navVisible flag (no tview calls here).
 				if mw.onNavClose != nil {

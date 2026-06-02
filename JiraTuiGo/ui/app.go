@@ -8,42 +8,50 @@ import (
 )
 
 type App struct {
-	tapp              *tview.Application
-	mainWindow        *mainWindow
-	issueList         *IssueList
-	navPanel          *NavPanel
-	cfg               *config.AppConfig
-	client            jira.Client
-	version           string
-	currentJql        string
-	navVisible        bool
-	detailVisible     bool
-	detailFullscreen  bool
-	currentIssue      *jira.Issue
+	tapp             *tview.Application
+	mainWindow       *mainWindow
+	issueList        *IssueList
+	navPanel         *NavPanel
+	jqlBar           *JqlBar
+	cfg              *config.AppConfig
+	client           jira.Client
+	version          string
+	currentJql       string
+	navVisible       bool
+	detailVisible    bool
+	detailFullscreen bool
+	jqlVisible       bool
+	currentIssue     *jira.Issue
 }
 
 func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 	tapp := tview.NewApplication()
 
+	history := config.NewJqlHistory()
+	_ = history.Load() // best-effort; missing file is fine
+
 	il := NewIssueList(tapp, cfg.Columns)
 	nav := NewNavPanel()
-	mw := newMainWindow(tapp, il, nav)
+	jqlBar := NewJqlBar(history)
+	mw := newMainWindow(tapp, il, nav, jqlBar)
 
 	app := &App{
 		tapp:       tapp,
 		mainWindow: mw,
 		issueList:  il,
 		navPanel:   nav,
+		jqlBar:     jqlBar,
 		cfg:        cfg,
 		client:     client,
 		version:    version,
 		currentJql: cfg.Behavior.DefaultJql,
 	}
 
-	// When the terminal goes too-small the BeforeDrawFunc hides the nav page;
-	// sync our flag without queuing extra draws.
+	// When the terminal goes too-small the BeforeDrawFunc hides overlays;
+	// sync our flags without queuing extra draws.
 	mw.onNavClose = func() {
 		app.navVisible = false
+		app.jqlVisible = false
 	}
 
 	// Nav callbacks.
@@ -55,12 +63,22 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 		app.closeNav()
 	}
 
+	// JQL bar callbacks.
+	jqlBar.OnSubmit = func(jql string) {
+		app.closeJql()
+		app.loadIssues(jql)
+	}
+	jqlBar.OnClose = func() {
+		app.closeJql()
+	}
+
 	// Issue list selection change → update detail panel.
 	il.OnSelectionChange = func(issue jira.Issue) {
 		app.showIssueInDetail(issue)
 	}
 
 	// Load initial issues.
+	jqlBar.SetText(cfg.Behavior.DefaultJql)
 	app.loadIssues(cfg.Behavior.DefaultJql)
 
 	// Load nav data in background so the UI is immediately responsive.
@@ -84,10 +102,13 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 		case tcell.KeyCtrlD:
 			app.toggleDetail()
 			return nil
+		case tcell.KeyCtrlJ:
+			app.toggleJql()
+			return nil
 		case tcell.KeyEnter:
 			// Enter opens fullscreen detail when issue list has focus and
-			// we are not already in fullscreen.
-			if !app.detailFullscreen {
+			// we are not already in fullscreen or JQL bar.
+			if !app.detailFullscreen && !app.jqlVisible {
 				app.openDetailFull()
 				return nil
 			}
@@ -100,6 +121,10 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 				app.closeDetail()
 				return nil
 			}
+			if app.jqlVisible {
+				// JQL bar handles Escape internally (clear vs close);
+				// don't intercept here — let it reach the input field.
+			}
 		}
 		return event
 	})
@@ -107,9 +132,8 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 	return tapp.SetRoot(mw.Primitive(), true).EnableMouse(false).Run()
 }
 
-// showIssueInDetail caches the current issue and pushes it to whichever
-// detail view is currently visible (side panel or fullscreen).
-// Safe to call from outside Draw.
+// ─── detail ───────────────────────────────────────────────────────────────────
+
 func (app *App) showIssueInDetail(issue jira.Issue) {
 	cp := issue
 	app.currentIssue = &cp
@@ -129,7 +153,6 @@ func (app *App) toggleDetail() {
 	_, _, termW, _ := app.mainWindow.pages.GetRect()
 	tier := SizeTier(termW)
 	if tier == Compact {
-		// In compact tier, Ctrl-D opens fullscreen instead.
 		if app.detailFullscreen {
 			app.closeDetailFull()
 		} else {
@@ -149,15 +172,12 @@ func (app *App) openDetailSide() {
 	tier := SizeTier(termW)
 	panelW := DetailWidth(tier, termW)
 	if panelW <= 0 {
-		// Compact: fall through to fullscreen.
 		app.openDetailFull()
 		return
 	}
 	app.mainWindow.detailPanel.SetIssue(app.currentIssue, panelW)
 	app.detailVisible = true
 	app.mainWindow.showDetailSide()
-	// ShowPage can transfer focus to the new visible page — explicitly keep
-	// focus on the issue list so the side panel remains passive.
 	app.tapp.SetFocus(app.issueList)
 }
 
@@ -170,7 +190,6 @@ func (app *App) closeDetail() {
 func (app *App) openDetailFull() {
 	_, _, termW, _ := app.mainWindow.pages.GetRect()
 	app.mainWindow.detailFull.SetIssue(app.currentIssue, termW)
-	// Close nav panel if open.
 	if app.navVisible {
 		app.closeNav()
 	}
@@ -185,15 +204,7 @@ func (app *App) closeDetailFull() {
 	app.tapp.SetFocus(app.issueList)
 }
 
-func (app *App) loadIssues(jql string) {
-	issues, _, err := app.client.SearchIssues(jql, app.cfg.Behavior.PageSize)
-	if err != nil {
-		return
-	}
-	app.issueList.SetIssues(issues)
-	app.mainWindow.currentJql = jql
-	app.currentJql = jql
-}
+// ─── nav ──────────────────────────────────────────────────────────────────────
 
 func (app *App) toggleNav() {
 	if app.navVisible {
@@ -213,4 +224,38 @@ func (app *App) closeNav() {
 	app.navVisible = false
 	app.mainWindow.hideNav()
 	app.tapp.SetFocus(app.issueList)
+}
+
+// ─── JQL bar ──────────────────────────────────────────────────────────────────
+
+func (app *App) toggleJql() {
+	if app.jqlVisible {
+		app.closeJql()
+	} else {
+		app.openJql()
+	}
+}
+
+func (app *App) openJql() {
+	app.jqlVisible = true
+	app.mainWindow.showJql()
+	app.jqlBar.FocusAndSelectAll(app.tapp)
+}
+
+func (app *App) closeJql() {
+	app.jqlVisible = false
+	app.mainWindow.hideJql()
+	app.tapp.SetFocus(app.issueList)
+}
+
+// ─── issues ───────────────────────────────────────────────────────────────────
+
+func (app *App) loadIssues(jql string) {
+	issues, _, err := app.client.SearchIssues(jql, app.cfg.Behavior.PageSize)
+	if err != nil {
+		return
+	}
+	app.issueList.SetIssues(issues)
+	app.mainWindow.currentJql = jql
+	app.currentJql = jql
 }
