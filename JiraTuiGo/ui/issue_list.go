@@ -409,7 +409,7 @@ func (il *IssueList) statusLine() string {
 	}
 	// Normal mode — show hidden count if any are hidden.
 	if hiddenCount > 0 {
-		return fmt.Sprintf("%d/%d issues (%s%d)", pos, visible, GlyphHidden, hiddenCount)
+		return fmt.Sprintf("%d/%d issues (%s %d)", pos, visible, GlyphHidden, hiddenCount)
 	}
 	return fmt.Sprintf("%d/%d issues", pos, total)
 }
