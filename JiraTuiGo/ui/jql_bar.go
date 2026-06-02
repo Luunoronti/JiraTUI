@@ -140,8 +140,8 @@ func (jb *JqlBar) Draw(screen tcell.Screen) {
 
 	// Anchor above the status bar.
 	y := termH - 1 - jqlBarHeight
-	if y < 1 {
-		y = 1
+	if y < 0 {
+		y = 0
 	}
 	jb.Box.SetRect(0, y, termW, jqlBarHeight)
 	jb.Box.DrawForSubclass(screen, jb)

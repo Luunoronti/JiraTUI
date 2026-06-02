@@ -186,10 +186,10 @@ func (dp *DetailPanel) Draw(screen tcell.Screen) {
 	if panelW <= 0 {
 		return
 	}
-	panelH := termH - 2 // y=1 to termH-2
+	panelH := termH - 1 // y=0 to termH-2; status bar at termH-1
 
 	panelX := termW - panelW
-	panelY := 1
+	panelY := 0
 
 	// Self-position: anchored top-right.
 	dp.Box.SetRect(panelX, panelY, panelW, panelH)

@@ -201,11 +201,11 @@ func (np *NavPanel) Draw(screen tcell.Screen) {
 	termW, termH := screen.Size()
 
 	panelW, tooNarrow := np.computePanelWidth(termW)
-	// y=1 skips the menu bar; h leaves 1 row for status bar.
-	panelH := termH - 2
+	// y=0 starts at top; h leaves 1 row for status bar at termH-1.
+	panelH := termH - 1
 
 	// Self-position: the panel decides its own rect each frame.
-	np.Box.SetRect(0, 1, panelW, panelH)
+	np.Box.SetRect(0, 0, panelW, panelH)
 
 	// DrawForSubclass fills the background and draws the border + title using
 	// the colors set in NewNavPanel / RefreshColors (no Set* calls here → no

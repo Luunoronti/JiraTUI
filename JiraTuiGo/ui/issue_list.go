@@ -206,6 +206,23 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 		return pad(text, col.width), headerFg, headerBg
 	})
 
+	// "JiraTUI" title right-aligned in the header row.
+	{
+		title := []rune(" JiraTUI ")
+		titleX := x + w - len(title)
+		if titleX > x {
+			titleStyle := tcell.StyleDefault.
+				Foreground(themes.C(t.TextEmphasis)).
+				Background(headerBg)
+			for j, r := range title {
+				if titleX+j >= x+w {
+					break
+				}
+				screen.SetContent(titleX+j, y, r, nil, titleStyle)
+			}
+		}
+	}
+
 	// Separator
 	sepY := y + 1
 	for i := 0; i < w; i++ {

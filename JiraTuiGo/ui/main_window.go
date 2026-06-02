@@ -97,9 +97,9 @@ func (mw *mainWindow) build() {
 	mw.statusBar.SetTextColor(statusFg)
 	mw.updateStatusBar(120)
 
-	// Main flex layout
+	// Main flex layout — no separate menu bar row; "JiraTUI" title is drawn
+	// right-aligned inside the issue list header row (saves one screen row).
 	mainFlex := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(mw.menuBar, 1, 0, false).
 		AddItem(mw.issueList, 0, 1, true).
 		AddItem(mw.statusBar, 1, 0, false)
 
