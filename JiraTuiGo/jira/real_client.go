@@ -6,11 +6,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+// debugLog is a file logger active when JIRATUI_DEBUG=1 is set.
+var debugLog *log.Logger
+
+func init() {
+	if os.Getenv("JIRATUI_DEBUG") != "1" {
+		return
+	}
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "jiratui-debug.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return
+	}
+	debugLog = log.New(f, "", log.LstdFlags)
+	debugLog.Printf("=== JiraTUI debug log opened: %s ===", path)
+}
+
+func dbg(format string, args ...any) {
+	if debugLog != nil {
+		debugLog.Printf(format, args...)
+	}
+}
+
+// Dbg is the exported version for use by other packages.
+func Dbg(format string, args ...any) { dbg(format, args...) }
 
 type RealClient struct {
 	baseURL    string
@@ -28,8 +57,10 @@ func NewRealClient(baseURL, email, token string) *RealClient {
 }
 
 func (c *RealClient) get(path string, v any) error {
+	dbg("GET %s", c.baseURL+path)
 	req, err := http.NewRequest("GET", c.baseURL+path, nil)
 	if err != nil {
+		dbg("GET request build error: %v", err)
 		return err
 	}
 	req.Header.Set("Authorization", c.authHeader)
@@ -37,15 +68,22 @@ func (c *RealClient) get(path string, v any) error {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		dbg("GET http error: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	dbg("GET %s → %d (%d bytes)", path, resp.StatusCode, len(body))
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		dbg("GET error body: %.500s", string(body))
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
-	return json.NewDecoder(resp.Body).Decode(v)
+	if err := json.Unmarshal(body, v); err != nil {
+		dbg("GET json decode error: %v | body[:200]: %.200s", err, string(body))
+		return err
+	}
+	return nil
 }
 
 func (c *RealClient) post(path string, body, v any) error {
@@ -74,18 +112,25 @@ func (c *RealClient) doJSON(method, path string, body, v any) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	dbg("%s %s", method, c.baseURL+path)
 	resp, err := c.http.Do(req)
 	if err != nil {
+		dbg("%s http error: %v", method, err)
 		return err
 	}
 	defer resp.Body.Close()
 
+	b, _ := io.ReadAll(resp.Body)
+	dbg("%s %s → %d (%d bytes)", method, path, resp.StatusCode, len(b))
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+		dbg("%s error body: %.500s", method, string(b))
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
 	}
 	if v != nil {
-		return json.NewDecoder(resp.Body).Decode(v)
+		if err := json.Unmarshal(b, v); err != nil {
+			dbg("%s json decode error: %v | body[:200]: %.200s", method, err, string(b))
+			return err
+		}
 	}
 	return nil
 }
@@ -96,12 +141,6 @@ func (c *RealClient) GetCurrentUser() (*JiraUser, error) {
 		return nil, err
 	}
 	return &u, nil
-}
-
-type searchPayload struct {
-	Jql        string   `json:"jql"`
-	MaxResults int      `json:"maxResults"`
-	Fields     []string `json:"fields"`
 }
 
 type searchResponse struct {
@@ -115,6 +154,32 @@ type rawIssue struct {
 	Fields rawFields `json:"fields"`
 }
 
+// jiraTime handles Jira Cloud's date format "2006-01-02T15:04:05.000+0000"
+// where the timezone offset has no colon — unlike RFC3339 which requires one.
+type jiraTime struct{ time.Time }
+
+func (jt *jiraTime) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), `"`)
+	if s == "" || s == "null" {
+		jt.Time = time.Time{}
+		return nil
+	}
+	// Try formats in order. Go's -0700 token matches ±HHMM (no colon).
+	for _, f := range []string{
+		"2006-01-02T15:04:05.999-0700", // Jira Cloud: milliseconds, no colon in tz
+		"2006-01-02T15:04:05-0700",     // no milliseconds, no colon
+		time.RFC3339Nano,               // standard with colon + nanoseconds
+		time.RFC3339,                   // standard with colon
+	} {
+		if t, err := time.Parse(f, s); err == nil {
+			jt.Time = t
+			return nil
+		}
+	}
+	jt.Time = time.Time{} // zero value — don't fail the whole decode
+	return nil
+}
+
 type rawFields struct {
 	Summary     string          `json:"summary"`
 	Description json.RawMessage `json:"description"`
@@ -125,8 +190,8 @@ type rawFields struct {
 	Assignee    *JiraUser       `json:"assignee"`
 	Reporter    *JiraUser       `json:"reporter"`
 	Labels      []string        `json:"labels"`
-	Created     time.Time       `json:"created"`
-	Updated     time.Time       `json:"updated"`
+	Created     jiraTime        `json:"created"`
+	Updated     jiraTime        `json:"updated"`
 	Comment     *struct {
 		Comments []rawComment `json:"comments"`
 	} `json:"comment"`
@@ -137,29 +202,50 @@ type rawComment struct {
 	ID      string          `json:"id"`
 	Author  JiraUser        `json:"author"`
 	Body    json.RawMessage `json:"body"`
-	Created time.Time       `json:"created"`
-	Updated time.Time       `json:"updated"`
+	Created jiraTime        `json:"created"`
+	Updated jiraTime        `json:"updated"`
+}
+
+type searchPayload struct {
+	Jql        string   `json:"jql"`
+	MaxResults int      `json:"maxResults"`
+	Fields     []string `json:"fields"`
 }
 
 func (c *RealClient) SearchIssues(jql string, maxResults int) ([]Issue, int, error) {
 	payload := searchPayload{
 		Jql:        jql,
 		MaxResults: maxResults,
-		Fields: []string{
-			"*navigable", "description", "comment", "priority", "status",
-			"assignee", "reporter", "issuetype", "project", "summary",
-			"labels", "sprint",
-		},
+		// "*navigable" returns all navigable fields (including custom sprint field);
+		// description and comment are not navigable so we add them explicitly.
+		Fields: []string{"*navigable", "description", "comment"},
 	}
-	var result searchResponse
-	if err := c.post("/rest/api/3/issue/search", payload, &result); err != nil {
-		return nil, 0, err
+
+	// Try the newer /rest/api/3/search/jql endpoint first (Jira Cloud 2024+),
+	// then fall back to the classic /rest/api/3/issue/search.
+	var lastErr error
+	for _, path := range []string{
+		"/rest/api/3/search/jql",
+		"/rest/api/3/issue/search",
+	} {
+		var result searchResponse
+		err := c.post(path, payload, &result)
+		if err == nil {
+			issues := make([]Issue, len(result.Issues))
+			for i, ri := range result.Issues {
+				issues[i] = convertIssue(ri)
+			}
+			dbg("SearchIssues %s → %d issues", path, len(issues))
+			return issues, result.Total, nil
+		}
+		dbg("SearchIssues %s error: %v", path, err)
+		// Only try the next endpoint on 404/405 — other errors are real failures.
+		if !strings.Contains(err.Error(), "HTTP 404") && !strings.Contains(err.Error(), "HTTP 405") {
+			return nil, 0, err
+		}
+		lastErr = err
 	}
-	issues := make([]Issue, len(result.Issues))
-	for i, ri := range result.Issues {
-		issues[i] = convertIssue(ri)
-	}
-	return issues, result.Total, nil
+	return nil, 0, lastErr
 }
 
 func convertIssue(ri rawIssue) Issue {
@@ -169,8 +255,8 @@ func convertIssue(ri rawIssue) Issue {
 		Key:     ri.Key,
 		Summary: f.Summary,
 		Labels:  f.Labels,
-		Created: f.Created,
-		Updated: f.Updated,
+		Created: f.Created.Time,
+		Updated: f.Updated.Time,
 	}
 	if f.Description != nil {
 		issue.Description = string(f.Description)
@@ -195,8 +281,8 @@ func convertIssue(ri rawIssue) Issue {
 				ID:      rc.ID,
 				Author:  rc.Author,
 				Body:    string(rc.Body),
-				Created: rc.Created,
-				Updated: rc.Updated,
+				Created: rc.Created.Time,
+				Updated: rc.Updated.Time,
 			})
 		}
 	}

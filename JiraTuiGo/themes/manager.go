@@ -91,6 +91,11 @@ func Current() *Theme {
 	return currentTheme
 }
 
+// CurrentThemeName returns the name of the currently active theme.
+func CurrentThemeName() string {
+	return Current().Name
+}
+
 func Apply(t *Theme) {
 	currentTheme = t
 	tview.Styles.PrimitiveBackgroundColor = pickColor(t.Background)

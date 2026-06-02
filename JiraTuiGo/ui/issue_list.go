@@ -25,6 +25,7 @@ type IssueList struct {
 	app               *tview.Application
 	onSelect          func(issue jira.Issue)
 	OnSelectionChange func(issue jira.Issue)
+	errorMsg          string // non-empty → shown instead of issue rows
 }
 
 func NewIssueList(app *tview.Application, cols config.ColumnVisibilityConfig) *IssueList {
@@ -36,7 +37,14 @@ func NewIssueList(app *tview.Application, cols config.ColumnVisibilityConfig) *I
 	return il
 }
 
+// SetError shows an error message in place of the issue list.
+// Call with "" to clear.
+func (il *IssueList) SetError(msg string) {
+	il.errorMsg = msg
+}
+
 func (il *IssueList) SetIssues(issues []jira.Issue) {
+	il.errorMsg = ""
 	il.issues = issues
 	if il.selected >= len(issues) {
 		il.selected = len(issues) - 1
@@ -161,6 +169,11 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 
 	if w < MinWidth || h < 3 {
 		tview.Print(screen, TooSmallMsg(w, h), x, y, w, tview.AlignLeft, themes.C(t.TextNormal))
+		return
+	}
+
+	if il.errorMsg != "" {
+		tview.Print(screen, " Error: "+il.errorMsg, x, y+1, w, tview.AlignLeft, themes.C(t.PriHighest))
 		return
 	}
 
@@ -325,6 +338,16 @@ func (il *IssueList) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			}
 		}
 	})
+}
+
+// UpdateIssue replaces the in-memory copy of an issue if it exists in the list.
+func (il *IssueList) UpdateIssue(updated jira.Issue) {
+	for i, iss := range il.issues {
+		if iss.Key == updated.Key {
+			il.issues[i] = updated
+			return
+		}
+	}
 }
 
 // statusLine returns a short summary for the status bar

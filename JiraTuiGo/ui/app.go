@@ -2,9 +2,12 @@ package ui
 
 import (
 	"github.com/gdamore/tcell/v2"
+	"github.com/pkg/browser"
 	"github.com/rivo/tview"
 	"jiratui/config"
 	"jiratui/jira"
+	"jiratui/themes"
+	"jiratui/ui/dialogs"
 )
 
 type App struct {
@@ -22,6 +25,7 @@ type App struct {
 	detailFullscreen bool
 	jqlVisible       bool
 	currentIssue     *jira.Issue
+	modalOpen        int // >0 when a dialog is on screen
 }
 
 func Run(cfg *config.AppConfig, client jira.Client, version string) error {
@@ -92,6 +96,21 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 
 	// Global key handler.
 	tapp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// F2 is always available — even when another modal is open we allow
+		// re-opening settings (guard is handled inside openSettings via modalOpen).
+		if event.Key() == tcell.KeyF2 && app.modalOpen == 0 {
+			app.openSettings()
+			return nil
+		}
+
+		// When a modal dialog is open, pass ALL keys through to the focused
+		// primitive.  Without this the global handler consumes Enter (opening
+		// fullscreen detail) and Escape (closing detail) before the dialog sees
+		// them, leaving dialogs that can never be confirmed or closed.
+		if app.modalOpen > 0 {
+			return event
+		}
+
 		switch event.Key() {
 		case tcell.KeyCtrlQ:
 			tapp.Stop()
@@ -104,6 +123,10 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 			return nil
 		case tcell.KeyCtrlJ:
 			app.toggleJql()
+			return nil
+		case tcell.KeyCtrlL:
+			// Legend is always available.
+			app.showLegend()
 			return nil
 		case tcell.KeyEnter:
 			// Enter opens fullscreen detail when issue list has focus and
@@ -126,6 +149,34 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 				// don't intercept here — let it reach the input field.
 			}
 		}
+
+		// Mutation shortcuts — only when nav/jql are not active and an issue is selected.
+		if !app.navVisible && !app.jqlVisible && app.currentIssue != nil {
+			switch event.Key() {
+			case tcell.KeyCtrlP:
+				app.changePriority()
+				return nil
+			case tcell.KeyCtrlT:
+				app.changeStatus()
+				return nil
+			case tcell.KeyCtrlA:
+				app.changeAssignee()
+				return nil
+			case tcell.KeyCtrlE:
+				app.editDescription()
+				return nil
+			case tcell.KeyCtrlK:
+				app.addComment()
+				return nil
+			case tcell.KeyCtrlO:
+				app.openInBrowser()
+				return nil
+			case tcell.KeyCtrlF:
+				app.saveAsFilter()
+				return nil
+			}
+		}
+
 		return event
 	})
 
@@ -251,11 +302,333 @@ func (app *App) closeJql() {
 // ─── issues ───────────────────────────────────────────────────────────────────
 
 func (app *App) loadIssues(jql string) {
-	issues, _, err := app.client.SearchIssues(jql, app.cfg.Behavior.PageSize)
+	app.issueList.SetError("")
+	issues, total, err := app.client.SearchIssues(jql, app.cfg.Behavior.PageSize)
 	if err != nil {
+		jira.Dbg("loadIssues error for jql=%q: %v", jql, err)
+		app.issueList.SetError(err.Error())
 		return
 	}
+	jira.Dbg("loadIssues jql=%q → %d/%d issues", jql, len(issues), total)
 	app.issueList.SetIssues(issues)
 	app.mainWindow.currentJql = jql
 	app.currentJql = jql
+}
+
+// refreshCurrentIssue re-fetches the current issue from Jira and updates all panels.
+func (app *App) refreshCurrentIssue() {
+	if app.currentIssue == nil {
+		return
+	}
+	fresh, err := app.client.GetIssue(app.currentIssue.Key)
+	if err != nil || fresh == nil {
+		return
+	}
+	app.currentIssue = fresh
+	app.issueList.UpdateIssue(*fresh)
+	if app.detailVisible {
+		_, _, termW, _ := app.mainWindow.pages.GetRect()
+		app.mainWindow.detailPanel.SetIssue(app.currentIssue, DetailWidth(SizeTier(termW), termW))
+	}
+	if app.detailFullscreen {
+		_, _, termW, _ := app.mainWindow.pages.GetRect()
+		app.mainWindow.detailFull.SetIssue(app.currentIssue, termW)
+	}
+}
+
+// restoreFocus returns focus to the appropriate panel after a dialog closes.
+func (app *App) restoreFocus() {
+	if app.detailFullscreen {
+		app.tapp.SetFocus(app.mainWindow.detailFull)
+	} else {
+		app.tapp.SetFocus(app.issueList)
+	}
+}
+
+// ─── mutation actions ─────────────────────────────────────────────────────────
+
+func (app *App) changePriority() {
+	priorities, err := app.client.GetPriorities()
+	if err != nil || len(priorities) == 0 {
+		return
+	}
+
+	names := make([]string, len(priorities))
+	for i, p := range priorities {
+		names[i] = p.Name
+	}
+
+	// Find current priority index.
+	initialIdx := 0
+	if app.currentIssue != nil {
+		for i, p := range priorities {
+			if p.Name == app.currentIssue.Priority.Name {
+				initialIdx = i
+				break
+			}
+		}
+	}
+
+	issueKey := app.currentIssue.Key
+	app.modalOpen++
+	dialogs.ShowChoiceDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		"Change Priority — "+issueKey,
+		names,
+		initialIdx,
+		func(idx int) {
+			app.modalOpen--
+			app.restoreFocus()
+			if idx < 0 {
+				return
+			}
+			go func() {
+				_ = app.client.UpdatePriority(issueKey, priorities[idx].Name)
+				app.tapp.QueueUpdateDraw(func() {
+					app.refreshCurrentIssue()
+				})
+			}()
+		},
+	)
+}
+
+func (app *App) changeStatus() {
+	if app.currentIssue == nil {
+		return
+	}
+	issueKey := app.currentIssue.Key
+
+	transitions, err := app.client.GetTransitions(issueKey)
+	if err != nil || len(transitions) == 0 {
+		return
+	}
+
+	names := make([]string, len(transitions))
+	for i, t := range transitions {
+		names[i] = t.Name
+	}
+
+	app.modalOpen++
+	dialogs.ShowChoiceDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		"Change Status — "+issueKey,
+		names,
+		0,
+		func(idx int) {
+			app.modalOpen--
+			app.restoreFocus()
+			if idx < 0 {
+				return
+			}
+			go func() {
+				_ = app.client.DoTransition(issueKey, transitions[idx].ID)
+				app.tapp.QueueUpdateDraw(func() {
+					app.refreshCurrentIssue()
+				})
+			}()
+		},
+	)
+}
+
+func (app *App) changeAssignee() {
+	if app.currentIssue == nil {
+		return
+	}
+	issueKey := app.currentIssue.Key
+	currentAssignee := ""
+	if app.currentIssue.Assignee != nil {
+		currentAssignee = app.currentIssue.Assignee.DisplayName
+	}
+
+	app.modalOpen++
+	dialogs.ShowAssigneeDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		app.client,
+		issueKey,
+		currentAssignee,
+		func(accountId string, saved bool) {
+			app.modalOpen--
+			app.restoreFocus()
+			if !saved {
+				return
+			}
+			go func() {
+				_ = app.client.UpdateAssignee(issueKey, accountId)
+				app.tapp.QueueUpdateDraw(func() {
+					app.refreshCurrentIssue()
+				})
+			}()
+		},
+	)
+}
+
+func (app *App) editDescription() {
+	if app.currentIssue == nil {
+		return
+	}
+	issueKey := app.currentIssue.Key
+	initial := app.currentIssue.Description
+
+	app.modalOpen++
+	dialogs.ShowTextEditorDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		"Edit Description — "+issueKey,
+		initial,
+		"Save",
+		func(text string, saved bool) {
+			app.modalOpen--
+			app.restoreFocus()
+			if !saved {
+				return
+			}
+			go func() {
+				_ = app.client.UpdateDescription(issueKey, text)
+				app.tapp.QueueUpdateDraw(func() {
+					app.refreshCurrentIssue()
+				})
+			}()
+		},
+	)
+}
+
+func (app *App) addComment() {
+	if app.currentIssue == nil {
+		return
+	}
+	issueKey := app.currentIssue.Key
+
+	app.modalOpen++
+	dialogs.ShowTextEditorDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		"Add Comment — "+issueKey,
+		"",
+		"Submit",
+		func(text string, saved bool) {
+			app.modalOpen--
+			app.restoreFocus()
+			if !saved || text == "" {
+				return
+			}
+			go func() {
+				_ = app.client.AddComment(issueKey, text)
+				app.tapp.QueueUpdateDraw(func() {
+					app.refreshCurrentIssue()
+				})
+			}()
+		},
+	)
+}
+
+func (app *App) openInBrowser() {
+	if app.currentIssue == nil {
+		return
+	}
+	baseURL := app.cfg.Conn.BaseURL
+	if baseURL == "" {
+		return
+	}
+	url := baseURL + "/browse/" + app.currentIssue.Key
+	_ = browser.OpenURL(url)
+}
+
+func (app *App) saveAsFilter() {
+	jql := app.currentJql
+	app.modalOpen++
+	dialogs.ShowSaveFilterDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		jql,
+		func(name, description string, saved bool) {
+			app.modalOpen--
+			app.restoreFocus()
+			if !saved || name == "" {
+				return
+			}
+			go func() {
+				_, err := app.client.SaveFilter(name, description, jql)
+				if err != nil {
+					return
+				}
+				// Refresh nav panel with updated filters.
+				projects, _ := app.client.GetProjects()
+				filters, _ := app.client.GetSavedFilters()
+				app.tapp.QueueUpdateDraw(func() {
+					app.navPanel.Populate(projects, filters)
+				})
+			}()
+		},
+	)
+}
+
+func (app *App) showLegend() {
+	app.modalOpen++
+	dialogs.ShowLegendDialog(app.tapp, app.mainWindow.pages, func() {
+		app.modalOpen--
+		app.restoreFocus()
+	})
+}
+
+// ─── settings ─────────────────────────────────────────────────────────────────
+
+func (app *App) openSettings() {
+	app.modalOpen++
+	dialogs.ShowSettingsDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		app.cfg,
+		themes.AvailableThemes(),
+		themes.CurrentThemeName(),
+		func(baseURL, email, token string) (string, error) {
+			c := jira.NewRealClient(baseURL, email, token)
+			user, err := c.GetCurrentUser()
+			if err != nil {
+				return "", err
+			}
+			return user.DisplayName, nil
+		},
+		func(newCfg *config.AppConfig) {
+			app.modalOpen--
+			app.cfg = newCfg
+			_ = newCfg.Save() // best-effort
+			themes.Switch(newCfg.Appearance.ThemeName)
+			themes.Apply(themes.Current())
+			app.rebuildClient()
+			app.restoreFocus()
+		},
+		func() {
+			app.modalOpen--
+			app.restoreFocus()
+		},
+	)
+}
+
+// rebuildClient recreates the Jira client from the current config and reloads
+// all data. Called after settings are saved.
+func (app *App) rebuildClient() {
+	if app.cfg.Conn.BaseURL != "" && app.cfg.Conn.Email != "" && app.cfg.Conn.TokenProtected != "" {
+		app.client = jira.NewRealClient(
+			app.cfg.Conn.BaseURL,
+			app.cfg.Conn.Email,
+			config.Unprotect(app.cfg.Conn.TokenProtected),
+		)
+	} else {
+		app.client = jira.NewMockClient()
+	}
+
+	// Reload nav data.
+	go func() {
+		projects, _ := app.client.GetProjects()
+		filters, _ := app.client.GetSavedFilters()
+		app.tapp.QueueUpdateDraw(func() {
+			app.navPanel.Populate(projects, filters)
+		})
+	}()
+
+	app.loadIssues(app.cfg.Behavior.DefaultJql)
+	app.jqlBar.SetText(app.cfg.Behavior.DefaultJql)
 }
