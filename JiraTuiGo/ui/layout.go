@@ -74,9 +74,9 @@ func StatusBarHints(width int, hints []Hint, keyOpen, keyClose string) string {
 				key := a[1:end]
 				rest := a[end+1:]
 				if full {
-					return "(" + keyOpen + key + keyClose + ")" + rest
+					return keyOpen + key + keyClose + rest
 				}
-				return "(" + keyOpen + key + keyClose + ")"
+				return keyOpen + key + keyClose
 			}
 		}
 		// "KEY:Word" format
@@ -105,7 +105,7 @@ func StatusBarHints(width int, hints []Hint, keyOpen, keyClose string) string {
 		}
 		return strings.Join(parts, sep)
 	}
-	return "(" + keyOpen + "Q" + keyClose + ")uit"
+	return keyOpen + "Q" + keyClose + "uit"
 }
 
 func TooSmallMsg(width, height int) string {
