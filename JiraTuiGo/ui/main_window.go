@@ -195,6 +195,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 		{"(\\)Cols"},
 		{"(G)AI"},
 		{"(L)egend"},
+		{"(V)iew"},
 		{"(Q)uit"},
 	}
 

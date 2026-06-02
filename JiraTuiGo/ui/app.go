@@ -36,6 +36,7 @@ type App struct {
 	jqlVisible       bool
 	currentIssue     *jira.Issue
 	modalOpen        int // >0 when a dialog is on screen
+	issueMeta        *config.IssueMetaStore
 }
 
 func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName string) error {
@@ -49,6 +50,10 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 	jqlBar := NewJqlBar(history)
 	mw := newMainWindow(tapp, il, nav, jqlBar)
 
+	meta := config.NewIssueMetaStore()
+	_ = meta.Load() // best-effort
+	il.SetMeta(meta)
+
 	app := &App{
 		tapp:       tapp,
 		mainWindow: mw,
@@ -61,6 +66,7 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 		repoOwner:  repoOwner,
 		repoName:   repoName,
 		currentJql: cfg.Behavior.DefaultJql,
+		issueMeta:  meta,
 	}
 
 	// When the terminal goes too-small the BeforeDrawFunc hides overlays;
@@ -170,6 +176,9 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 		case tcell.KeyCtrlL:
 			app.showLegend()
 			return nil
+		case tcell.KeyCtrlV:
+			app.toggleHiddenView()
+			return nil
 		case tcell.KeyCtrlR:
 			app.loadIssues(app.currentJql)
 			return nil
@@ -221,6 +230,9 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 				return nil
 			case tcell.KeyCtrlF:
 				app.saveAsFilter()
+				return nil
+			case tcell.KeyCtrlH:
+				app.toggleHideIssue()
 				return nil
 			}
 		}
@@ -786,6 +798,21 @@ func (app *App) openSettings() {
 			app.restoreFocus()
 		},
 	)
+}
+
+// ─── hide issue ───────────────────────────────────────────────────────────────
+
+func (app *App) toggleHideIssue() {
+	if app.currentIssue == nil {
+		return
+	}
+	app.issueMeta.ToggleHidden(app.currentIssue.Key)
+	_ = app.issueMeta.Save()
+	app.issueList.RebuildVisible()
+}
+
+func (app *App) toggleHiddenView() {
+	app.issueList.ToggleShowHidden()
 }
 
 // rebuildClient recreates the Jira client from the current config and reloads

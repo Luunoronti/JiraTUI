@@ -19,13 +19,16 @@ type columnDef struct {
 
 type IssueList struct {
 	*tview.Box
-	issues            []jira.Issue
+	allIssues         []jira.Issue // full list from last fetch
+	issues            []jira.Issue // currently displayed subset
 	selected          int
 	columns           config.ColumnVisibilityConfig
 	app               *tview.Application
 	onSelect          func(issue jira.Issue)
 	OnSelectionChange func(issue jira.Issue)
 	errorMsg          string // non-empty → shown instead of issue rows
+	meta              *config.IssueMetaStore
+	showHidden        bool // false=hide hidden issues, true=show all
 }
 
 func NewIssueList(app *tview.Application, cols config.ColumnVisibilityConfig) *IssueList {
@@ -43,19 +46,60 @@ func (il *IssueList) SetError(msg string) {
 	il.errorMsg = msg
 }
 
-func (il *IssueList) SetIssues(issues []jira.Issue) {
-	il.errorMsg = ""
-	il.issues = issues
-	if il.selected >= len(issues) {
-		il.selected = len(issues) - 1
+// SetMeta wires the metadata store and rebuilds the visible slice.
+func (il *IssueList) SetMeta(meta *config.IssueMetaStore) {
+	il.meta = meta
+	il.RebuildVisible()
+}
+
+// RebuildVisible recomputes il.issues from il.allIssues based on showHidden.
+// In normal mode (showHidden=false): drop issues where meta.IsHidden(key).
+// In all mode (showHidden=true): use allIssues as-is.
+// Clamps il.selected to the new length and fires OnSelectionChange if needed.
+func (il *IssueList) RebuildVisible() {
+	if il.showHidden || il.meta == nil {
+		il.issues = il.allIssues
+	} else {
+		visible := make([]jira.Issue, 0, len(il.allIssues))
+		for _, iss := range il.allIssues {
+			if !il.meta.IsHidden(iss.Key) {
+				visible = append(visible, iss)
+			}
+		}
+		il.issues = visible
+	}
+
+	// Clamp selection.
+	if il.selected >= len(il.issues) {
+		il.selected = len(il.issues) - 1
 	}
 	if il.selected < 0 {
 		il.selected = 0
 	}
-	// Notify detail panel of the new selection (first issue after load).
-	if il.OnSelectionChange != nil && len(issues) > 0 {
+
+	// Notify detail panel of the new selection.
+	if il.OnSelectionChange != nil && len(il.issues) > 0 {
 		il.OnSelectionChange(il.issues[il.selected])
 	}
+}
+
+// ToggleShowHidden switches the view mode and calls RebuildVisible.
+// Returns the new value of showHidden.
+func (il *IssueList) ToggleShowHidden() bool {
+	il.showHidden = !il.showHidden
+	il.RebuildVisible()
+	return il.showHidden
+}
+
+// IsShowingHidden reports the current view mode.
+func (il *IssueList) IsShowingHidden() bool {
+	return il.showHidden
+}
+
+func (il *IssueList) SetIssues(issues []jira.Issue) {
+	il.errorMsg = ""
+	il.allIssues = issues
+	il.RebuildVisible()
 }
 
 // SetColumns updates column visibility; takes effect on next Draw.
@@ -242,7 +286,11 @@ func (il *IssueList) Draw(screen tcell.Screen) {
 				}
 				text = pad(truncate(name, col.width), col.width)
 			case "summary":
-				text = pad(truncate(issue.Summary, col.width), col.width)
+				summaryText := issue.Summary
+				if il.showHidden && il.meta != nil && il.meta.IsHidden(issue.Key) {
+					summaryText = GlyphHidden + " " + summaryText
+				}
+				text = pad(truncate(summaryText, col.width), col.width)
 			}
 			return text, color, bgColor
 		})
@@ -318,8 +366,14 @@ func (il *IssueList) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 	})
 }
 
-// UpdateIssue replaces the in-memory copy of an issue if it exists in the list.
+// UpdateIssue replaces the in-memory copy of an issue if it exists in either slice.
 func (il *IssueList) UpdateIssue(updated jira.Issue) {
+	for i, iss := range il.allIssues {
+		if iss.Key == updated.Key {
+			il.allIssues[i] = updated
+			break
+		}
+	}
 	for i, iss := range il.issues {
 		if iss.Key == updated.Key {
 			il.issues[i] = updated
@@ -328,10 +382,34 @@ func (il *IssueList) UpdateIssue(updated jira.Issue) {
 	}
 }
 
-// statusLine returns a short summary for the status bar
+// statusLine returns a short summary for the status bar.
 func (il *IssueList) statusLine() string {
-	if len(il.issues) == 0 {
+	if len(il.allIssues) == 0 {
 		return "0 issues"
 	}
-	return fmt.Sprintf("%d/%d issues", il.selected+1, len(il.issues))
+
+	// Count hidden issues across allIssues.
+	hiddenCount := 0
+	for _, iss := range il.allIssues {
+		if il.meta != nil && il.meta.IsHidden(iss.Key) {
+			hiddenCount++
+		}
+	}
+
+	total := len(il.allIssues)
+	visible := len(il.issues)
+	pos := il.selected + 1
+	if len(il.issues) == 0 {
+		pos = 0
+	}
+
+	if il.showHidden {
+		// Showing all — indicate "show all" mode.
+		return fmt.Sprintf("%d/%d issues [%s]", pos, total, GlyphHidden)
+	}
+	// Normal mode — show hidden count if any are hidden.
+	if hiddenCount > 0 {
+		return fmt.Sprintf("%d/%d issues (%s%d)", pos, visible, GlyphHidden, hiddenCount)
+	}
+	return fmt.Sprintf("%d/%d issues", pos, total)
 }

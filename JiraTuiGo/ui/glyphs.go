@@ -31,6 +31,11 @@ const (
 	GlyphPriLowest  = "⇊"
 )
 
+// Visibility glyphs
+const (
+	GlyphHidden = "⊙" // eye/target symbol for hidden issues
+)
+
 // Status glyphs
 const (
 	GlyphStatusTodo       = "○"
