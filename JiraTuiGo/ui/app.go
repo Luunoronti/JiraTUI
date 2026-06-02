@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"strings"
+	"time"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/pkg/browser"
 	"github.com/rivo/tview"
+	"jiratui/ai"
 	"jiratui/config"
 	"jiratui/jira"
 	"jiratui/themes"
@@ -18,6 +22,7 @@ type App struct {
 	jqlBar           *JqlBar
 	cfg              *config.AppConfig
 	client           jira.Client
+	aiClient         ai.AiClient // nil if not configured
 	version          string
 	currentJql       string
 	navVisible       bool
@@ -100,6 +105,12 @@ func Run(cfg *config.AppConfig, client jira.Client, version string) error {
 		// re-opening settings (guard is handled inside openSettings via modalOpen).
 		if event.Key() == tcell.KeyF2 && app.modalOpen == 0 {
 			app.openSettings()
+			return nil
+		}
+
+		// Ctrl-G opens the AI JQL dialog (only when no modal is open).
+		if event.Key() == tcell.KeyCtrlG && app.modalOpen == 0 {
+			app.openAiJql()
 			return nil
 		}
 
@@ -311,6 +322,11 @@ func (app *App) loadIssues(jql string) {
 	issues, total, err := app.client.SearchIssues(jql, app.cfg.Behavior.PageSize)
 	if err != nil {
 		jira.Dbg("loadIssues error for jql=%q: %v", jql, err)
+		// If the JQL is invalid (HTTP 400) and AI is configured, try to fix it automatically.
+		if strings.Contains(err.Error(), "400") && app.cfg.AI.Adapter != "" {
+			app.tryAiFallback(jql)
+			return
+		}
 		app.issueList.SetError(err.Error())
 		return
 	}
@@ -596,6 +612,93 @@ func (app *App) showColumns() {
 			app.restoreFocus()
 		},
 	)
+}
+
+// ─── AI JQL ───────────────────────────────────────────────────────────────────
+
+// openAiJql opens the AI JQL dialog.
+func (app *App) openAiJql() {
+	aiCfg := &app.cfg.AI
+	if aiCfg.Adapter == "" || aiCfg.Model == "" {
+		app.issueList.SetError("AI not configured — open Settings (F2) → AI tab")
+		go func() {
+			time.Sleep(3 * time.Second)
+			app.tapp.QueueUpdateDraw(func() { app.issueList.SetError("") })
+		}()
+		return
+	}
+
+	client, err := ai.NewAiClient(aiCfg, config.Unprotect)
+	if err != nil {
+		app.issueList.SetError("AI error: " + err.Error())
+		go func() {
+			time.Sleep(3 * time.Second)
+			app.tapp.QueueUpdateDraw(func() { app.issueList.SetError("") })
+		}()
+		return
+	}
+
+	// Build context for system prompt (best-effort, ignore errors).
+	var projects []jira.Project
+	var statuses []jira.Status
+	var priorities []jira.Priority
+	var issueTypes []jira.IssueType
+	projects, _ = app.client.GetProjects()
+	statuses, _ = app.client.GetStatuses()
+	priorities, _ = app.client.GetPriorities()
+	issueTypes, _ = app.client.GetIssueTypes()
+
+	system := ai.BuildSystemPrompt(projects, statuses, priorities, issueTypes)
+
+	app.modalOpen++
+	dialogs.ShowAiJqlDialog(
+		app.tapp,
+		app.mainWindow.pages,
+		app.currentJql,
+		func(prompt string) (string, error) {
+			return client.Generate(system, prompt)
+		},
+		func(jql string) {
+			app.modalOpen--
+			app.jqlBar.SetText(jql)
+			app.loadIssues(jql)
+			app.restoreFocus()
+		},
+		func() {
+			app.modalOpen--
+			app.restoreFocus()
+		},
+	)
+}
+
+// tryAiFallback silently attempts to translate an invalid JQL query via AI and
+// retries the search with the translated query.
+func (app *App) tryAiFallback(originalJql string) {
+	client, err := ai.NewAiClient(&app.cfg.AI, config.Unprotect)
+	if err != nil {
+		return
+	}
+	projects, _ := app.client.GetProjects()
+	statuses, _ := app.client.GetStatuses()
+	priorities, _ := app.client.GetPriorities()
+	issueTypes, _ := app.client.GetIssueTypes()
+	system := ai.BuildSystemPrompt(projects, statuses, priorities, issueTypes)
+	go func() {
+		jql, err := client.Generate(system, originalJql)
+		if err != nil {
+			return
+		}
+		jql = strings.TrimSpace(jql)
+		// Strip markdown fences if the model wrapped the output.
+		jql = strings.TrimPrefix(jql, "```jql")
+		jql = strings.TrimPrefix(jql, "```")
+		jql = strings.TrimSuffix(jql, "```")
+		jql = strings.TrimSpace(jql)
+		app.tapp.QueueUpdateDraw(func() {
+			app.jqlBar.SetText(jql)
+			app.loadIssues(jql)
+		})
+	}()
 }
 
 // ─── settings ─────────────────────────────────────────────────────────────────
