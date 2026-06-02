@@ -23,9 +23,9 @@ project.fragment.lock.json
 # Claude Code local settings (permissions, local config)
 .claude/
 
-# Go build artifacts
+# Go build artifacts — any binary or text file produced by go build / release
 JiraTuiGo/jiratui
-JiraTuiGo/jiratui.exe
-JiraTuiGo/jiratui_linux
-JiraTuiGo/jiratui_windows_amd64.exe
+JiraTuiGo/jiratui_*
+JiraTuiGo/jiratui-*
+JiraTuiGo/*.exe
 JiraTuiGo/*.txt
