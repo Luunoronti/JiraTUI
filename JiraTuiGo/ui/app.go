@@ -176,7 +176,7 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 		case tcell.KeyCtrlL:
 			app.showLegend()
 			return nil
-		case tcell.KeyCtrlV:
+		case tcell.KeyCtrlY:
 			app.toggleHiddenView()
 			return nil
 		case tcell.KeyCtrlR:
