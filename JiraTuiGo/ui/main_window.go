@@ -90,9 +90,11 @@ func (mw *mainWindow) build() {
 	_ = menuText
 	mw.menuBar.SetText(" JiraTUI")
 
-	// Status bar
+	// Status bar — 2 rows allocated; second row used only when hints overflow.
 	mw.statusBar = tview.NewTextView()
 	mw.statusBar.SetDynamicColors(true)
+	mw.statusBar.SetScrollable(false)
+	mw.statusBar.SetWrap(false)
 	mw.statusBar.SetBackgroundColor(statusBg)
 	mw.statusBar.SetTextColor(statusFg)
 	mw.updateStatusBar(120)
@@ -101,7 +103,7 @@ func (mw *mainWindow) build() {
 	// right-aligned inside the issue list header row (saves one screen row).
 	mainFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(mw.issueList, 0, 1, true).
-		AddItem(mw.statusBar, 1, 0, false)
+		AddItem(mw.statusBar, 2, 0, false)
 
 	// Too small view
 	tooSmall := tview.NewTextView()
@@ -179,34 +181,46 @@ func (mw *mainWindow) build() {
 }
 
 func (mw *mainWindow) updateStatusBar(width int) {
-	hints := []Hint{
+	allHints := []Hint{
 		{"F2", "Settings"},
 		{"Ctrl-R", "Refresh"},
 		{"Ctrl-B", "Nav"},
 		{"Ctrl-D", "Detail"},
 		{"Ctrl-J", "JQL"},
 		{"Ctrl-\\", "Columns"},
+		{"Ctrl-G", "AI"},
 		{"Ctrl-L", "Legend"},
 		{"Ctrl-Q", "Quit"},
 	}
-	text := StatusBarHints(width, hints)
 
 	issueCount := ""
 	if mw.issueList != nil {
 		issueCount = "  " + mw.issueList.statusLine()
 	}
 
+	updateIndicator := ""
 	if mw.updateVersion != "" {
-		var indicator string
 		if mw.updateVersion == "restart" {
-			indicator = "  ↑ Restart to apply update"
+			updateIndicator = "  ↑ Restart to apply update"
 		} else {
-			indicator = "  ↑ " + mw.updateVersion + " — Ctrl-U"
+			updateIndicator = "  ↑ " + mw.updateVersion + " — Ctrl-U"
 		}
-		mw.statusBar.SetText(" " + text + issueCount + indicator)
+	}
+
+	hints := StatusBarHints(width, allHints)
+	meta := issueCount + updateIndicator
+
+	// Try fitting everything on one line (status bar allocated 2 rows;
+	// leave second row empty when one is enough).
+	line1 := " " + hints + meta
+	if len([]rune(line1)) <= width {
+		mw.statusBar.SetText(line1 + "\n")
 		return
 	}
-	mw.statusBar.SetText(" " + text + issueCount)
+
+	// Overflow — split: shortcuts on line 1, meta (count + update) on line 2.
+	// Re-abbreviate hints to leave room for the meta on line 2.
+	mw.statusBar.SetText(" " + hints + "\n " + meta)
 }
 
 // SetUpdateAvailable sets the update indicator string and refreshes the status bar.
