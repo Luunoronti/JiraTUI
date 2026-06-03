@@ -141,23 +141,37 @@ func Run(cfg *config.AppConfig, client jira.Client, version, repoOwner, repoName
 		})
 	}()
 
-	// Daily update check — runs in background, never crashes the app.
+	// Periodic update check — runs immediately then every 15 minutes.
+	// The 15-minute throttle (LastUpdateCheck) prevents hammering the API
+	// when the app is restarted frequently.
 	go func() {
-		if version != "dev" && time.Since(cfg.Behavior.LastUpdateCheck) < 15*time.Minute {
-			return
+		checkOnce := func() {
+			if version == "dev" {
+				return
+			}
+			if time.Since(cfg.Behavior.LastUpdateCheck) < 15*time.Minute {
+				return
+			}
+			release, err := updater.Check(app.repoOwner, app.repoName, version)
+			if err != nil || release == nil {
+				return
+			}
+			cfg.Behavior.LastUpdateCheck = time.Now()
+			_ = cfg.Save()
+			app.latestRelease = release
+			app.updateAssetName = updater.AssetName()
+			tapp.QueueUpdateDraw(func() {
+				mw.SetUpdateAvailable(release.Version)
+			})
 		}
-		release, err := updater.Check(app.repoOwner, app.repoName, version)
-		if err != nil || release == nil {
-			return
+
+		checkOnce() // check immediately on startup
+
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			checkOnce() // re-check every 15 minutes while app is running
 		}
-		cfg.Behavior.LastUpdateCheck = time.Now()
-		_ = cfg.Save()
-		app.latestRelease = release
-		assetName := updater.AssetName()
-		app.updateAssetName = assetName
-		tapp.QueueUpdateDraw(func() {
-			mw.SetUpdateAvailable(release.Version)
-		})
 	}()
 
 	// Global key handler.

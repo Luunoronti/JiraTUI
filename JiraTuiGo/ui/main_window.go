@@ -186,19 +186,8 @@ func (mw *mainWindow) updateStatusBar(width int) {
 	keyOpen := "[" + themes.C(t.StatusKeyFg).String() + "]"
 	keyClose := "[-]"
 
-	allHints := []Hint{
-		{"F1:What's New"},
-		{"F2:Settings"},
-		{"(R)efresh"},
-		{"(B)Nav"},
-		{"(D)etail"},
-		{"(J)QL"},
-		{"(\\)Cols"},
-		{"(G)AI"},
-		{"(L)egend"},
-		{"(Y)iew"},
-		{"(Q)uit"},
-	}
+	// Only legend hint — full keyboard reference is in F1 / Ctrl-L.
+	legendHint := StatusBarHints(width, []Hint{{"(L)egend"}}, keyOpen, keyClose)
 
 	issueCount := ""
 	if mw.issueList != nil {
@@ -214,8 +203,7 @@ func (mw *mainWindow) updateStatusBar(width int) {
 		}
 	}
 
-	hints := StatusBarHints(width, allHints, keyOpen, keyClose)
-	mw.statusBar.SetText(" " + hints + issueCount + updateIndicator + "  | JiraTUI")
+	mw.statusBar.SetText(" " + legendHint + issueCount + updateIndicator + "  | JiraTUI")
 }
 
 // SetUpdateAvailable sets the update indicator string and refreshes the status bar.
